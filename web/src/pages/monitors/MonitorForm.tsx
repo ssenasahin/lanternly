@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Braces, Globe, Radio } from "lucide-react";
+import { ArrowLeft, Braces, Globe, Network, Plug, Radio } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
 import { ApiError, api } from "../../api/client";
@@ -9,6 +9,7 @@ import { Alert, SelectField, SkeletonRows, TextField } from "../../components";
 import { formatSeconds } from "../../lib/format";
 import { NotFoundPage } from "../NotFound";
 import { RequestFields, ResponseFields } from "./ApiFields";
+import { DnsFields } from "./DnsFields";
 import { METHODS } from "./operators";
 import { formField, monitorSchema, NEW_MONITOR, toForm, toInput, type MonitorForm } from "./schema";
 import { TestPanel } from "./TestPanel";
@@ -33,6 +34,16 @@ const TARGET = {
     label: "Host",
     placeholder: "example.com or 203.0.114.10",
     hint: "Up when it answers an ICMP echo request.",
+  },
+  TCP: {
+    label: "Host and port",
+    placeholder: "db.example.com:5432",
+    hint: "Up when the port accepts a connection. Nothing is sent.",
+  },
+  DNS: {
+    label: "Domain name",
+    placeholder: "example.com",
+    hint: undefined,
   },
 };
 
@@ -149,6 +160,14 @@ function MonitorEditor({ existing }: { existing?: Monitor }) {
                 <input type="radio" value="PING" {...register("type")} />
                 <Radio size={15} aria-hidden /> Ping a server
               </label>
+              <label>
+                <input type="radio" value="TCP" {...register("type")} />
+                <Plug size={15} aria-hidden /> TCP port
+              </label>
+              <label>
+                <input type="radio" value="DNS" {...register("type")} />
+                <Network size={15} aria-hidden /> DNS record
+              </label>
             </div>
           </fieldset>
 
@@ -182,6 +201,13 @@ function MonitorEditor({ existing }: { existing?: Monitor }) {
             {...register("name")}
           />
         </div>
+
+        {type === "DNS" && (
+          <div className="card-body form-section form-section-split">
+            <h2 className="section-title">Lookup</h2>
+            <DnsFields form={form} />
+          </div>
+        )}
 
         {type === "API" && (
           <>

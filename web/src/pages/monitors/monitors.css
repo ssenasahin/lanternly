@@ -509,6 +509,10 @@ fieldset.field {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.form-grid-full {
+  grid-column: 1 / -1;
+}
+
 .header-row {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto auto;
 }

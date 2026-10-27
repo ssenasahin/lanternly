@@ -3,6 +3,8 @@ import {
   ChevronRight,
   Globe,
   HeartPulse,
+  Network,
+  Plug,
   Plus,
   Radar,
   Radio,
@@ -222,10 +224,18 @@ function hourSlots(slots: HourSlot[]): StripSlot[] {
 // The second line of a row: what is checked, or what a heartbeat expects.
 function subtitle(m: ListedMonitor): string {
   if (m.heartbeat) return `heartbeat, ${describeSchedule(m.heartbeat)}`;
+  if (m.dns) return `${m.dns.recordType} ${m.target}`;
   return m.api ? `${m.api.method} ${m.target}` : m.target;
 }
 
-const TYPE_ICONS = { HTTP: Globe, API: Braces, PING: Radio, HEARTBEAT: HeartPulse };
+const TYPE_ICONS = {
+  HTTP: Globe,
+  API: Braces,
+  PING: Radio,
+  TCP: Plug,
+  DNS: Network,
+  HEARTBEAT: HeartPulse,
+};
 
 function MonitorRow({ monitor: m }: { monitor: ListedMonitor }) {
   const TypeIcon = TYPE_ICONS[m.type];

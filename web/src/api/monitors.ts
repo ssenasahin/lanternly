@@ -2,7 +2,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { Status } from "../components";
 import { api } from "./client";
 
-export type MonitorType = "HTTP" | "API" | "PING" | "HEARTBEAT";
+export type MonitorType = "HTTP" | "API" | "PING" | "TCP" | "DNS" | "HEARTBEAT";
 // The types Lanternly checks itself, as opposed to heartbeats that call in.
 export type CheckedType = Exclude<MonitorType, "HEARTBEAT">;
 export type MonitorStatus = "PENDING" | "UP" | "DOWN" | "DEGRADED" | "PAUSED";
@@ -46,6 +46,17 @@ export interface ApiSettings {
   rules: Rule[];
 }
 
+export type RecordType = "A" | "AAAA" | "CNAME" | "MX" | "TXT";
+
+// What a DNS monitor asks for. The name it asks about is the monitor's target.
+export interface DnsSettings {
+  recordType: RecordType;
+  // A value that must be among the answers; null accepts any answer.
+  expected: string | null;
+  // A public DNS server to ask; null for the default ones.
+  resolver: string | null;
+}
+
 export interface Monitor {
   id: string;
   name: string;
@@ -65,6 +76,8 @@ export interface Monitor {
   heartbeat: HeartbeatSchedule | null;
   // Set for API monitors only.
   api: ApiSettings | null;
+  // Set for DNS monitors only.
+  dns: DnsSettings | null;
 }
 
 // One hour of the last 24, oldest first, as the list's strip shows it.
@@ -83,6 +96,7 @@ export type MonitorInput = Pick<
 > & {
   type: CheckedType;
   api?: ApiSettings;
+  dns?: DnsSettings;
 };
 
 // What "Test now" found: the check's verdict plus what the API sent back.

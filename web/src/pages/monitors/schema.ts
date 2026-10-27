@@ -7,6 +7,7 @@ import type {
   Monitor,
   MonitorInput,
   Operator,
+  RecordType,
 } from "../../api/monitors";
 import { METHODS, OPERATORS, PRESENCE } from "./operators";
 
@@ -15,6 +16,8 @@ import { METHODS, OPERATORS, PRESENCE } from "./operators";
 // refuse a private address, and its errors land on the same fields.
 
 const NUMERIC = new Set<Operator>(["GREATER_THAN", "LESS_THAN"]);
+
+export const RECORD_TYPES: RecordType[] = ["A", "AAAA", "CNAME", "MX", "TXT"];
 
 const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 const STATUS_ITEM = String.raw`(?:\d{3}(?:\s*-\s*\d{3})?|[1-5]xx)`;
@@ -42,7 +45,7 @@ export const monitorSchema = z
       .trim()
       .min(1, "Give the monitor a name")
       .max(100, "Keep it under 100 characters"),
-    type: z.enum(["HTTP", "API", "PING"]),
+    type: z.enum(["HTTP", "API", "PING", "TCP", "DNS"]),
     target: z.string().trim().min(1, "Enter what to monitor").max(2048),
     intervalSec: z.number().int().min(30).max(300),
     // Seconds in the form; the API stores milliseconds.
@@ -64,16 +67,19 @@ export const monitorSchema = z
     body: z.string().max(10_000, "Keep the body under 10,000 characters"),
     expectedStatus: z.string(),
     rules: z.array(rule).max(20, "20 rules at most"),
+    // A DNS monitor's question, gathered into `dns` for the API.
+    recordType: z.enum(RECORD_TYPES as [RecordType, ...RecordType[]]),
+    dnsExpected: z.string().trim().max(500, "Keep it under 500 characters"),
+    dnsResolver: z.string().trim(),
   })
   .superRefine((form, ctx) => {
     const problem = (path: (string | number)[], message: string) =>
       ctx.addIssue({ code: "custom", path, message });
 
-    if (form.type !== "PING" && !isWebUrl(form.target)) {
-      problem(["target"], "Enter a full URL, starting with https://");
-    }
-    if (form.type === "PING" && /[\s/]/.test(form.target)) {
-      problem(["target"], "Enter a host name like example.com, or an IP address");
+    const target = TARGET_PROBLEMS[form.type];
+    if (!target.valid(form.target)) problem(["target"], target.message);
+    if (form.type === "DNS" && form.dnsResolver && !IP.test(form.dnsResolver)) {
+      problem(["dnsResolver"], "Use a DNS server's IP address, like 1.1.1.1");
     }
     const attempts = form.retries + 1;
     if (form.timeoutSec * attempts > form.intervalSec) {
@@ -121,6 +127,29 @@ export const monitorSchema = z
 
 export type MonitorForm = z.infer<typeof monitorSchema>;
 
+// Loose on purpose: the API knows IPv6 and says exactly what's wrong.
+const IP = /^(\d{1,3}(\.\d{1,3}){3}|[\da-f:]*:[\da-f:.]*)$/i;
+
+const TARGET_PROBLEMS: Record<
+  MonitorForm["type"],
+  { valid: (t: string) => boolean; message: string }
+> = {
+  HTTP: { valid: isWebUrl, message: "Enter a full URL, starting with https://" },
+  API: { valid: isWebUrl, message: "Enter a full URL, starting with https://" },
+  PING: {
+    valid: (t) => !/[\s/]/.test(t),
+    message: "Enter a host name like example.com, or an IP address",
+  },
+  TCP: {
+    valid: (t) => /^(\[[^\]]+\]|[^\s:/[\]]+):\d{1,5}$/.test(t),
+    message: "Enter a host and a port, like db.example.com:5432",
+  },
+  DNS: {
+    valid: (t) => !/[\s/:]/.test(t) && !/^[\d.]+$/.test(t),
+    message: "Enter a domain name like example.com",
+  },
+};
+
 function isWebUrl(value: string): boolean {
   try {
     const url = new URL(value);
@@ -144,6 +173,12 @@ const NO_API = {
   rules: [],
 } satisfies Partial<MonitorForm>;
 
+const NO_DNS = {
+  recordType: "A",
+  dnsExpected: "",
+  dnsResolver: "",
+} satisfies Partial<MonitorForm>;
+
 export const NEW_MONITOR: MonitorForm = {
   name: "",
   type: "HTTP",
@@ -153,13 +188,14 @@ export const NEW_MONITOR: MonitorForm = {
   retries: 1,
   slowAfterMs: null,
   ...NO_API,
+  ...NO_DNS,
 };
 
 export const NEW_RULE = { path: "", operator: "EQUALS", expected: "" } as const;
 export const NEW_HEADER = { name: "", value: "", secret: false, stored: false } as const;
 
 export function toForm(monitor: Monitor): MonitorForm {
-  const { api } = monitor;
+  const { api, dns } = monitor;
   return {
     name: monitor.name,
     // Heartbeats have a form of their own and never get here.
@@ -184,6 +220,13 @@ export function toForm(monitor: Monitor): MonitorForm {
           rules: api.rules.map((r) => ({ ...r, expected: r.expected ?? "" })),
         }
       : NO_API),
+    ...(dns
+      ? {
+          recordType: dns.recordType,
+          dnsExpected: dns.expected ?? "",
+          dnsResolver: dns.resolver ?? "",
+        }
+      : NO_DNS),
   };
 }
 
@@ -217,13 +260,28 @@ export function toInput(form: MonitorForm): MonitorInput {
     retries: form.retries,
     slowAfterMs: form.slowAfterMs,
     ...(form.type === "API" && { api: toApiSettings(form) }),
+    ...(form.type === "DNS" && {
+      dns: {
+        recordType: form.recordType,
+        expected: form.dnsExpected || null,
+        resolver: form.dnsResolver || null,
+      },
+    }),
   };
 }
+
+// The DNS settings' names in the form, where the API's would be too vague.
+const DNS_FIELDS: Record<string, FieldPath<MonitorForm>> = {
+  "dns.recordType": "recordType",
+  "dns.expected": "dnsExpected",
+  "dns.resolver": "dnsResolver",
+};
 
 // API field names ("timeoutMs", "api.rules.0.path"), mapped to where the error should
 // show in the form.
 export function formField(apiField: string): FieldPath<MonitorForm> | null {
   if (apiField === "timeoutMs") return "timeoutSec";
+  if (apiField in DNS_FIELDS) return DNS_FIELDS[apiField]!;
   const field = apiField.replace(/^api\./, "");
   return field.split(".")[0]! in NEW_MONITOR ? (field as FieldPath<MonitorForm>) : null;
 }

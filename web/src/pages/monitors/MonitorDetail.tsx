@@ -100,6 +100,20 @@ function CheckedBody({ monitor }: { monitor: Monitor }) {
         <Fact label="Last checked">
           {monitor.lastCheckedAt ? timeAgo(monitor.lastCheckedAt) : "Not yet"}
         </Fact>
+        {monitor.dns && (
+          <>
+            <Fact label="Expects">
+              {monitor.dns.expected ? (
+                <span className="mono">{monitor.dns.expected}</span>
+              ) : (
+                "Any answer"
+              )}
+            </Fact>
+            <Fact label="DNS server">
+              <span className="mono">{monitor.dns.resolver ?? "1.1.1.1, 8.8.8.8"}</span>
+            </Fact>
+          </>
+        )}
       </dl>
       {monitor.api && <ApiSettingsCard api={monitor.api} />}
 
@@ -119,6 +133,14 @@ function Target({ monitor }: { monitor: Monitor }) {
     );
   }
   if (monitor.type === "PING") return <p className="detail-target mono">ping {monitor.target}</p>;
+  if (monitor.type === "TCP") return <p className="detail-target mono">tcp {monitor.target}</p>;
+  if (monitor.dns) {
+    return (
+      <p className="detail-target mono">
+        dns {monitor.dns.recordType} {monitor.target}
+      </p>
+    );
+  }
   // An API endpoint is called with its own method and headers; opening it in the
   // browser would only send a bare GET, so it isn't a link.
   if (monitor.api) {
