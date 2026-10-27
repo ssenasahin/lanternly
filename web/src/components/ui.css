@@ -423,6 +423,15 @@
   color: var(--faint);
 }
 
+/* For choices that may not fit a phone's width in one line. */
+.segmented-wrap {
+  flex-wrap: wrap;
+}
+
+.segmented-wrap label {
+  white-space: nowrap;
+}
+
 .segmented-sm label {
   height: 26px;
   padding: 0 var(--space-3);
@@ -441,4 +450,20 @@
   .tile-value {
     font-size: var(--text-lg);
   }
+}
+
+/* --- Code: commands to copy, responses to read --- */
+.code-block {
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--raised);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  font-variant-ligatures: none;
+  white-space: pre;
 }

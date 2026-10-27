@@ -34,21 +34,6 @@
   margin-top: var(--space-2);
 }
 
-.code-block {
-  min-width: 0;
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  overflow-x: auto;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--raised);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  line-height: 1.6;
-  font-variant-ligatures: none;
-  white-space: pre;
-}
-
 .fact-note {
   display: block;
   font-size: var(--text-xs);
@@ -84,9 +69,4 @@
   margin-top: var(--space-2);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-/* Four schedule choices don't fit a phone's width in one line. */
-.segmented-wrap {
-  flex-wrap: wrap;
 }
