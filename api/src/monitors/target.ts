@@ -2,7 +2,7 @@ import { resolvePublicHost, UnsafeTargetError, type ResolveHost } from "@lantern
 import { isIP } from "node:net";
 import { HttpError } from "../http.js";
 
-export type MonitorKind = "HTTP" | "PING";
+export type MonitorKind = "HTTP" | "API" | "PING";
 
 // One DNS label: letters, digits and inner hyphens, at most 63 characters.
 const LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
@@ -14,7 +14,7 @@ export async function checkTarget(
   target: string,
   resolve?: ResolveHost,
 ): Promise<string> {
-  const { normalised, hostname } = type === "HTTP" ? parseUrl(target) : parseHost(target);
+  const { normalised, hostname } = type === "PING" ? parseHost(target) : parseUrl(target);
   try {
     await resolvePublicHost(hostname, resolve);
   } catch (err) {

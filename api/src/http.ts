@@ -1,5 +1,5 @@
 import type { ErrorRequestHandler } from "express";
-import { z } from "zod";
+import type { z } from "zod";
 
 // An error that is safe to show the client: its status and message are deliberate.
 export class HttpError extends Error {
@@ -12,10 +12,16 @@ export class HttpError extends Error {
   }
 }
 
+// Problems are keyed by the field's path, dotted for nested ones ("api.rules.0.path"),
+// so a form can put each message under the input it's about.
 export function validate<S extends z.ZodType>(schema: S, data: unknown): z.infer<S> {
   const result = schema.safeParse(data);
   if (!result.success) {
-    throw new HttpError(400, "Invalid request", z.flattenError(result.error).fieldErrors);
+    const details: Record<string, string[]> = {};
+    for (const issue of result.error.issues) {
+      if (issue.path.length > 0) (details[issue.path.join(".")] ??= []).push(issue.message);
+    }
+    throw new HttpError(400, "Invalid request", details);
   }
   return result.data;
 }

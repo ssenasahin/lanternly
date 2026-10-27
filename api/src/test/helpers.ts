@@ -70,6 +70,7 @@ const memoryPings: PingQueue = {
 export const dnsRecords: Record<string, string[]> = {
   "example.com": ["93.184.215.14", "2606:2800:21f:cb07:6820:80da:af6b:8b2c"],
   "status.example.org": ["203.0.114.10"],
+  "api.example.com": ["93.184.215.20"],
   "intranet.example.com": ["10.0.0.12"],
   "sneaky.example.com": ["93.184.215.14", "127.0.0.1"],
   localhost: ["127.0.0.1", "::1"],
@@ -82,6 +83,9 @@ async function fakeResolve(hostname: string): Promise<string[]> {
   return addresses;
 }
 
+// "Test now" sends real requests; in tests every host leads to a local server.
+const localResolve = async () => ["127.0.0.1"];
+
 export function makeApp(env: Partial<Env> = {}) {
   return createApp({
     env: { ...testEnv, ...env },
@@ -90,6 +94,7 @@ export function makeApp(env: Partial<Env> = {}) {
     scheduler: memoryScheduler,
     pings: memoryPings,
     resolveHost: fakeResolve,
+    checkResolve: localResolve,
   });
 }
 

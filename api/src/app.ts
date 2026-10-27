@@ -4,6 +4,7 @@ import {
   type MonitorScheduler,
   type PingQueue,
   type PrismaClient,
+  type Resolve,
   type ResolveHost,
 } from "@lanternly/db";
 import cookieParser from "cookie-parser";
@@ -32,6 +33,8 @@ export interface AppDeps {
   checkDatabase?: () => Promise<void>;
   // Overridable so the SSRF guard can be tested without real DNS.
   resolveHost?: ResolveHost;
+  // Overridable so "Test now" can reach a local test server.
+  checkResolve?: Resolve;
 }
 
 // Building the app is separate from listening on a port, so tests can send
@@ -44,6 +47,7 @@ export function createApp({
   pings,
   checkDatabase,
   resolveHost,
+  checkResolve,
 }: AppDeps) {
   const app = express();
   const encryptionKey = parseEncryptionKey(env.ENCRYPTION_KEY);
@@ -73,7 +77,14 @@ export function createApp({
   app.use("/api/auth", authRouter({ env, prisma, mailer, encryptionKey }));
   app.use(
     "/api/monitors",
-    monitorRouter({ prisma, scheduler, jwtSecret: env.JWT_SECRET, resolveHost }),
+    monitorRouter({
+      prisma,
+      scheduler,
+      jwtSecret: env.JWT_SECRET,
+      encryptionKey,
+      resolveHost,
+      checkResolve,
+    }),
   );
   app.use(
     "/api/heartbeats",
