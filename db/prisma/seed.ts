@@ -10,7 +10,7 @@ import {
   type Prisma,
 } from "@prisma/client";
 import argon2 from "argon2";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 const prisma = new PrismaClient();
 
@@ -369,6 +369,83 @@ async function seedHeartbeats(ownerId: string, now: number, rand: () => number) 
   return 2;
 }
 
+// A server agent with a month of reports: a daily load curve, a disk filling slowly,
+// and one CPU spike that tripped the 90% alert two days ago. Its key is random and
+// never shown; replace it on the server's page to run a real agent against it.
+async function seedAgent(ownerId: string, now: number, rand: () => number) {
+  const monitor = await prisma.monitor.create({
+    data: {
+      ownerId,
+      name: "Build server",
+      type: MonitorType.AGENT,
+      target: "",
+      status: "UP",
+      lastCheckedAt: new Date(now),
+      agent: {
+        create: {
+          keyHash: createHash("sha256").update(randomBytes(24)).digest("hex"),
+          keyPrefix: "lnly_ag_demo",
+          hostname: "build-01",
+          platform: "linux Ubuntu 24.04",
+          lastSeenAt: new Date(now - 30_000),
+        },
+      },
+    },
+  });
+
+  const spikeStart = now - 2 * DAY - 3 * HOUR;
+  const spikeEnd = spikeStart + 25 * 60_000;
+  const sample = (at: number) => {
+    const hourOfDay = new Date(at).getUTCHours() + new Date(at).getUTCMinutes() / 60;
+    const daily = 18 * Math.max(0, Math.sin(((hourOfDay - 6) / 24) * 2 * Math.PI));
+    const spiking = at >= spikeStart && at < spikeEnd;
+    const cpu = spiking ? 92 + rand() * 6 : 12 + daily + rand() * 10;
+    return {
+      agentId: monitor.id,
+      at: new Date(at),
+      cpu: Math.min(100, cpu),
+      memory: 52 + daily * 0.6 + rand() * 4,
+      // Fills about 7 points over the month, with builds' scratch files coming and going.
+      disk: 61 + (7 * (HISTORY_DAYS * DAY - (now - at))) / (HISTORY_DAYS * DAY) + rand() * 0.4,
+    };
+  };
+
+  // Minute by minute for the last two days, every 10 minutes before that.
+  const metrics: Prisma.AgentMetricCreateManyInput[] = [];
+  for (let at = now - HISTORY_DAYS * DAY; at < now - 2 * DAY; at += 10 * 60_000) {
+    metrics.push(sample(at));
+  }
+  for (let at = now - 2 * DAY; at <= now - 30_000; at += 60_000) metrics.push(sample(at));
+  for (let i = 0; i < metrics.length; i += 5000) {
+    await prisma.agentMetric.createMany({ data: metrics.slice(i, i + 5000) });
+  }
+
+  await prisma.incident.create({
+    data: {
+      monitorId: monitor.id,
+      startedAt: new Date(spikeStart + 5 * 60_000),
+      resolvedAt: new Date(spikeEnd + 60_000),
+      cause: "CPU over 90% for 5 minutes (95% on average)",
+    },
+  });
+}
+
+// What the incident timeline would have recorded: the outage, the email, the recovery.
+async function seedIncidentEvents(ownerId: string) {
+  const incidents = await prisma.incident.findMany({ where: { monitor: { ownerId } } });
+  const events: Prisma.IncidentEventCreateManyInput[] = incidents.flatMap((i) => [
+    { incidentId: i.id, type: "OPENED", at: i.startedAt, detail: i.cause },
+    {
+      incidentId: i.id,
+      type: "NOTIFIED",
+      at: new Date(i.startedAt.getTime() + 4_000),
+      detail: `Emailed ${DEMO_EMAIL}`,
+    },
+    ...(i.resolvedAt ? [{ incidentId: i.id, type: "RESOLVED" as const, at: i.resolvedAt }] : []),
+  ]);
+  await prisma.incidentEvent.createMany({ data: events });
+}
+
 async function main() {
   // The demo password comes from the environment so no credential lives in the repo.
   const password = process.env.SEED_DEMO_PASSWORD;
@@ -416,9 +493,11 @@ async function main() {
     checks += raw.length;
   }
   const heartbeats = await seedHeartbeats(user.id, now, rand);
+  await seedAgent(user.id, now, rand);
+  await seedIncidentEvents(user.id);
 
   console.log(
-    `Seeded ${DEMO_EMAIL} with ${monitors.length} monitors, ${heartbeats} heartbeats, ${checks} recent checks and ${HISTORY_DAYS} days of history.`,
+    `Seeded ${DEMO_EMAIL} with ${monitors.length} monitors, ${heartbeats} heartbeats, a server agent, ${checks} recent checks and ${HISTORY_DAYS} days of history.`,
   );
 }
 
