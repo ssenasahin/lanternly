@@ -13,10 +13,11 @@ import {
 import cookieParser from "cookie-parser";
 import cors from "cors";
 import express from "express";
-import { rateLimit } from "express-rate-limit";
+import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 import helmet from "helmet";
 import swaggerUi from "swagger-ui-express";
 import { adminRouter } from "./admin/routes.js";
+import { noProbe, type SystemProbe } from "./admin/system.js";
 import { agentReportRouter, agentRouter } from "./agents/routes.js";
 import { apiKeyRouter, requireApiKey } from "./api-keys/routes.js";
 import { requireAuth } from "./auth/middleware.js";
@@ -53,6 +54,8 @@ export interface AppDeps {
   checkResolve?: Resolve;
   // Overridable so alert deliveries can be caught in tests.
   channelTransport?: Transport;
+  // Queue and Redis figures for the admin panel; without it they read as unknown.
+  system?: SystemProbe;
 }
 
 // Building the app is separate from listening on a port, so tests can send
@@ -69,6 +72,7 @@ export function createApp({
   resolveHost,
   checkResolve,
   channelTransport,
+  system = noProbe,
 }: AppDeps) {
   const app = express();
   const encryptionKey = parseEncryptionKey(env.ENCRYPTION_KEY);
@@ -149,7 +153,7 @@ export function createApp({
       limit: 120,
       standardHeaders: "draft-8",
       legacyHeaders: false,
-      keyGenerator: (req) => req.get("authorization") ?? req.ip ?? "",
+      keyGenerator: (req) => req.get("authorization") ?? ipKeyGenerator(req.ip ?? ""),
       message: { error: "Slow down: 120 requests a minute per key." },
     }),
     monitorRouter({
@@ -165,7 +169,17 @@ export function createApp({
     res.json(openApi);
   });
   app.use("/docs", swaggerUi.serve, swaggerUi.setup(openApi, { customSiteTitle: "Lanternly API" }));
-  app.use("/api/admin", adminRouter(prisma, env.JWT_SECRET));
+  app.use(
+    "/api/admin",
+    adminRouter({
+      prisma,
+      jwtSecret: env.JWT_SECRET,
+      mailer,
+      scheduler,
+      webOrigin: env.WEB_ORIGIN,
+      system,
+    }),
+  );
 
   app.use((_req, res) => {
     res.status(404).json({ error: "Not found" });

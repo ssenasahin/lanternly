@@ -8,6 +8,18 @@ import { z } from "zod";
 import { hashPassword, passwordProblem } from "../auth/password.js";
 import { revokeAllSessions } from "../auth/sessions.js";
 
+// Made from a shell on the server, not by a signed-in admin, so the log says so.
+const recordCreation = (id: string, email: string, promoted: boolean) =>
+  prisma.auditLog.create({
+    data: {
+      actorEmail: "command line (npm run admin:create)",
+      action: "admin.create",
+      targetId: id,
+      target: email,
+      detail: { promoted },
+    },
+  });
+
 async function main() {
   const email = z
     .string()
@@ -21,6 +33,7 @@ async function main() {
     await prisma.user.update({ where: { id: existing.id }, data: { role: "SUPER_ADMIN" } });
     // Old sessions carry the old role; ending them makes the change clean.
     await revokeAllSessions(prisma, existing.id);
+    await recordCreation(existing.id, email, true);
     console.log(`\n${email} is now a super admin. Sign in again to pick up the new role.`);
   } else {
     const password = await askHidden("Password (at least 12 characters): ");
@@ -29,9 +42,10 @@ async function main() {
     if ((await askHidden("Repeat the password: ")) !== password) {
       throw new Error("The passwords didn't match.");
     }
-    await prisma.user.create({
+    const created = await prisma.user.create({
       data: { email, passwordHash: await hashPassword(password), role: "SUPER_ADMIN" },
     });
+    await recordCreation(created.id, email, false);
     console.log(`\nCreated super admin ${email}.`);
   }
   console.log("Sign in and turn on two-factor sign-in before opening the admin panel.");

@@ -11,6 +11,7 @@ import {
 import { generate } from "otplib";
 import request, { type Response } from "supertest";
 import { createApp } from "../app.js";
+import type { SystemProbe } from "../admin/system.js";
 import type { Env } from "../env.js";
 import { TEST_DATABASE_URL } from "./database.js";
 
@@ -105,7 +106,7 @@ async function fakeResolve(hostname: string): Promise<string[]> {
 // "Test now" sends real requests; in tests every host leads to a local server.
 const localResolve = async () => ["127.0.0.1"];
 
-export function makeApp(env: Partial<Env> = {}) {
+export function makeApp(env: Partial<Env> = {}, system?: SystemProbe) {
   return createApp({
     env: { ...testEnv, ...env },
     prisma,
@@ -117,6 +118,7 @@ export function makeApp(env: Partial<Env> = {}) {
     channelTransport: memoryTransport,
     escalations: { cancel: async (id) => void cancelledEscalations.push(id) },
     agentReports: { add: async (job) => void agentJobs.push(job.agentId) },
+    system,
   });
 }
 

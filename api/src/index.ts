@@ -3,6 +3,7 @@ import {
   CHECKS_QUEUE,
   ESCALATIONS_QUEUE,
   HEARTBEATS_QUEUE,
+  NOTIFICATIONS_QUEUE,
   prisma,
   queueAgentReports,
   queueEscalationCanceller,
@@ -14,6 +15,7 @@ import {
   type PingJob,
 } from "@lanternly/db";
 import { Queue } from "bullmq";
+import { queueProbe } from "./admin/system.js";
 import { createApp } from "./app.js";
 import { loadEnv } from "./env.js";
 
@@ -32,6 +34,8 @@ const checks = new Queue<CheckJob>(CHECKS_QUEUE, { connection: redis });
 const heartbeats = new Queue<PingJob>(HEARTBEATS_QUEUE, { connection: redis });
 const escalations = new Queue(ESCALATIONS_QUEUE, { connection: redis });
 const agents = new Queue(AGENTS_QUEUE, { connection: redis });
+// Only read from, for the admin panel's queue lengths.
+const notifications = new Queue(NOTIFICATIONS_QUEUE, { connection: redis });
 const app = createApp({
   env,
   prisma,
@@ -40,6 +44,7 @@ const app = createApp({
   pings: queuePings(heartbeats),
   escalations: queueEscalationCanceller(escalations),
   agentReports: queueAgentReports(agents),
+  system: queueProbe([checks, notifications, escalations, heartbeats, agents], redis),
 });
 
 const server = app.listen(env.API_PORT, () => {
@@ -50,9 +55,9 @@ const server = app.listen(env.API_PORT, () => {
 function shutdown() {
   server.close(() => {
     void Promise.all([
-      Promise.all([checks.close(), heartbeats.close(), escalations.close(), agents.close()]).then(
-        () => redis.quit(),
-      ),
+      Promise.all(
+        [checks, heartbeats, escalations, agents, notifications].map((q) => q.close()),
+      ).then(() => redis.quit()),
       prisma.$disconnect(),
     ]).then(() => process.exit(0));
   });
