@@ -36,8 +36,29 @@ export async function resetDatabase(): Promise<void> {
   await prisma.$executeRawUnsafe("TRUNCATE TABLE users CASCADE");
 }
 
+// Fake DNS for the SSRF tests. Any name not listed here doesn't exist.
+export const dnsRecords: Record<string, string[]> = {
+  "example.com": ["93.184.215.14", "2606:2800:21f:cb07:6820:80da:af6b:8b2c"],
+  "status.example.org": ["203.0.114.10"],
+  "intranet.example.com": ["10.0.0.12"],
+  "sneaky.example.com": ["93.184.215.14", "127.0.0.1"],
+  localhost: ["127.0.0.1", "::1"],
+};
+
+async function fakeResolve(hostname: string): Promise<string[]> {
+  const addresses = dnsRecords[hostname];
+  if (!addresses)
+    throw Object.assign(new Error(`getaddrinfo ENOTFOUND ${hostname}`), { code: "ENOTFOUND" });
+  return addresses;
+}
+
 export function makeApp(env: Partial<Env> = {}) {
-  return createApp({ env: { ...testEnv, ...env }, prisma, mailer: memoryMailer });
+  return createApp({
+    env: { ...testEnv, ...env },
+    prisma,
+    mailer: memoryMailer,
+    resolveHost: fakeResolve,
+  });
 }
 
 // Pulls the refresh cookie out of a response, as a browser would store it.
