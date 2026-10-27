@@ -31,6 +31,21 @@ function dayTicks(series: Bucket[], range: Range) {
     .map((b) => b.at);
 }
 
+// Recharts picks round numbers of milliseconds, which in minutes read as 2.333… For
+// runs of a minute or more, ticks land on whole minutes instead.
+const MINUTE_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 240];
+function minuteTicks(series: Bucket[]) {
+  const max = Math.max(0, ...series.map((b) => b.avgMs ?? 0));
+  if (max < 60_000) return undefined;
+  const minutes = max / 60_000;
+  const step = MINUTE_STEPS.find((s) => s * 4 >= minutes) ?? MINUTE_STEPS.at(-1)!;
+  const count = Math.ceil(minutes / step);
+  return Array.from({ length: count + 1 }, (_, i) => i * step * 60_000);
+}
+
+const msTick = (ms: number) =>
+  ms >= 60_000 ? `${ms / 60_000} min` : ms >= 1000 ? `${ms / 1000} s` : `${ms} ms`;
+
 // Consecutive buckets with a failed check, merged into one shaded span each.
 function outageSpans(series: Bucket[], bucketSec: number) {
   const spans: { from: string; to: string }[] = [];
@@ -48,11 +63,23 @@ interface Props {
   series: Bucket[];
   range: Range;
   bucketSec: number;
+  // What each result is, for the tooltip: "3 checks" or "3 runs".
+  noun?: string;
+  // Draw the line across empty buckets. Right for a job that runs now and then, where
+  // a bucket without a run is normal; wrong for checks, where a gap means no data.
+  sparse?: boolean;
 }
 
 // Average response time over the range, one series, so no legend: the card's title
 // names it. Spans with a failed check are shaded, and the tooltip says how many.
-export default function ResponseChart({ series, range, bucketSec }: Props) {
+export default function ResponseChart({
+  series,
+  range,
+  bucketSec,
+  noun = "check",
+  sparse = false,
+}: Props) {
+  const yTicks = minuteTicks(series);
   // The last bucket's x is its start; spans may end after it, so clamp them.
   const lastAt = series.at(-1)?.at;
   const spans = outageSpans(series, bucketSec).map((s) => ({
@@ -74,7 +101,9 @@ export default function ResponseChart({ series, range, bucketSec }: Props) {
             minTickGap={40}
           />
           <YAxis
-            tickFormatter={(ms: number) => (ms >= 1000 ? `${ms / 1000} s` : `${ms} ms`)}
+            tickFormatter={msTick}
+            ticks={yTicks}
+            domain={yTicks ? [0, yTicks.at(-1)!] : undefined}
             tickLine={false}
             axisLine={false}
             width={56}
@@ -93,6 +122,7 @@ export default function ResponseChart({ series, range, bucketSec }: Props) {
               <ChartTooltip
                 bucket={active ? (payload?.[0]?.payload as Bucket | undefined) : undefined}
                 bucketSec={bucketSec}
+                noun={noun}
               />
             )}
             cursor={{ className: "chart-cursor" }}
@@ -103,7 +133,9 @@ export default function ResponseChart({ series, range, bucketSec }: Props) {
             type="monotone"
             className="chart-series"
             strokeWidth={2}
-            connectNulls={false}
+            connectNulls={sparse}
+            // With runs far apart, each one gets a dot, so a single run still shows.
+            dot={sparse ? { r: 2.5, className: "chart-dot" } : false}
             isAnimationActive={false}
             activeDot={{ r: 4, className: "chart-dot" }}
           />
@@ -113,13 +145,21 @@ export default function ResponseChart({ series, range, bucketSec }: Props) {
   );
 }
 
-function ChartTooltip({ bucket, bucketSec }: { bucket?: Bucket; bucketSec: number }) {
+function ChartTooltip({
+  bucket,
+  bucketSec,
+  noun,
+}: {
+  bucket?: Bucket;
+  bucketSec: number;
+  noun: string;
+}) {
   if (!bucket) return null;
   return (
     <div className="chart-tooltip">
       <div className="chart-tooltip-time">{formatBucket(bucket.at, bucketSec)}</div>
       {bucket.checks === 0 ? (
-        <div className="chart-tooltip-row">No checks</div>
+        <div className="chart-tooltip-row">No {noun}s</div>
       ) : (
         <>
           <div className="chart-tooltip-row">
@@ -127,7 +167,7 @@ function ChartTooltip({ bucket, bucketSec }: { bucket?: Bucket; bucketSec: numbe
             <strong>{formatMs(bucket.avgMs)}</strong> average
           </div>
           <div className="chart-tooltip-row muted">
-            {bucket.checks} {bucket.checks === 1 ? "check" : "checks"}
+            {bucket.checks} {bucket.checks === 1 ? noun : `${noun}s`}
             {bucket.failures > 0 && (
               <>
                 , <span className="chart-tooltip-bad">{bucket.failures} down</span>
