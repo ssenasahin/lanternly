@@ -3,6 +3,7 @@
 // show the first time the dashboard opens.
 import { MonitorType, PrismaClient, type Prisma } from "@prisma/client";
 import argon2 from "argon2";
+import { randomBytes } from "node:crypto";
 
 const prisma = new PrismaClient();
 
@@ -153,6 +154,133 @@ function history(m: DemoMonitor, monitorId: string, now: number, rand: () => num
   return { raw, rollups, incidents };
 }
 
+// Documentation addresses (RFC 5737), never a real machine.
+const JOB_HOST = { ip: "203.0.113.7", userAgent: "curl/8.5.0" };
+// Random like real ones: a public demo must not have guessable ping URLs.
+const newToken = () => randomBytes(16).toString("base64url");
+const utc = (ms: number) => new Date(ms).toISOString().replace("T", " ").slice(0, 16) + " UTC";
+
+// Two heartbeats: a nightly backup that's timed, was slow once and missed a night,
+// and an hourly export that went quiet two hours ago and is down right now.
+async function seedHeartbeats(ownerId: string, now: number, rand: () => number) {
+  const backup = await prisma.monitor.create({
+    data: {
+      ownerId,
+      name: "Nightly backup",
+      type: MonitorType.HEARTBEAT,
+      target: "",
+      intervalSec: 0,
+      status: "UP",
+      // 03:00 in Istanbul is midnight UTC.
+      heartbeat: {
+        create: {
+          token: newToken(),
+          cron: "0 3 * * *",
+          timezone: "Europe/Istanbul",
+          graceSec: 1800,
+        },
+      },
+    },
+  });
+  const pings: Prisma.HeartbeatPingCreateManyInput[] = [];
+  const checks: Prisma.CheckResultCreateManyInput[] = [];
+  const incidents: Prisma.IncidentCreateManyInput[] = [];
+  const today = Math.floor(now / DAY) * DAY;
+  let lastPingAt = 0;
+  let missedSince = 0;
+  for (let day = HISTORY_DAYS; day >= 0; day--) {
+    const start = today - day * DAY + Math.round(rand() * 20_000);
+    if (start > now) continue;
+    if (day === 17) {
+      // The run never happened: down once the grace ran out, back with the next ping.
+      const lateAt = start + 30 * 60_000;
+      missedSince = lateAt;
+      checks.push({
+        monitorId: backup.id,
+        status: "DOWN",
+        checkedAt: new Date(lateAt),
+        error: `No ping since ${utc(lastPingAt)}; one was due by ${utc(today - day * DAY)}`,
+      });
+      continue;
+    }
+    const slow = day === 9;
+    const durationMs = slow ? 610_000 : Math.round(230_000 + rand() * 40_000);
+    const end = start + durationMs;
+    if (end > now) continue;
+    const size = (2.3 + rand() * 0.3).toFixed(2);
+    pings.push({ monitorId: backup.id, kind: "START", receivedAt: new Date(start), ...JOB_HOST });
+    pings.push({
+      monitorId: backup.id,
+      kind: "SUCCESS",
+      receivedAt: new Date(end),
+      durationMs,
+      body: `pg_dump finished: ${size} GB written to s3://backups/${new Date(start).toISOString().slice(0, 10)}.dump`,
+      ...JOB_HOST,
+    });
+    checks.push({
+      monitorId: backup.id,
+      status: slow ? "DEGRADED" : "UP",
+      responseMs: durationMs,
+      checkedAt: new Date(end),
+      error: slow ? "Ran for 10 min, more than twice the usual 4 min" : null,
+    });
+    if (missedSince) {
+      incidents.push({
+        monitorId: backup.id,
+        startedAt: new Date(missedSince),
+        resolvedAt: new Date(end),
+        cause: checks.at(-2)!.error ?? null,
+      });
+      missedSince = 0;
+    }
+    lastPingAt = end;
+  }
+  await prisma.heartbeat.update({
+    where: { monitorId: backup.id },
+    data: { lastPingAt: new Date(lastPingAt) },
+  });
+
+  // Hourly, never timed (no start pings), quiet for the last two hours.
+  const quietSince = now - 2 * HOUR - 13 * 60_000;
+  const lateAt = quietSince + HOUR + 5 * 60_000;
+  const cause = `No ping since ${utc(quietSince)}; one was due by ${utc(quietSince + HOUR)}`;
+  const exportJob = await prisma.monitor.create({
+    data: {
+      ownerId,
+      name: "Invoice export",
+      type: MonitorType.HEARTBEAT,
+      target: "",
+      intervalSec: 3600,
+      status: "DOWN",
+      lastCheckedAt: new Date(lateAt),
+      heartbeat: {
+        create: {
+          token: newToken(),
+          periodSec: 3600,
+          graceSec: 300,
+          lastPingAt: new Date(quietSince),
+        },
+      },
+    },
+  });
+  for (let at = quietSince - HISTORY_DAYS * DAY; at <= quietSince; at += HOUR) {
+    pings.push({ monitorId: exportJob.id, kind: "SUCCESS", receivedAt: new Date(at), ...JOB_HOST });
+    checks.push({ monitorId: exportJob.id, status: "UP", checkedAt: new Date(at) });
+  }
+  checks.push({
+    monitorId: exportJob.id,
+    status: "DOWN",
+    checkedAt: new Date(lateAt),
+    error: cause,
+  });
+  incidents.push({ monitorId: exportJob.id, startedAt: new Date(lateAt), cause });
+
+  await prisma.heartbeatPing.createMany({ data: pings });
+  await prisma.checkResult.createMany({ data: checks });
+  await prisma.incident.createMany({ data: incidents });
+  return 2;
+}
+
 async function main() {
   // The demo password comes from the environment so no credential lives in the repo.
   const password = process.env.SEED_DEMO_PASSWORD;
@@ -193,9 +321,10 @@ async function main() {
     await prisma.incident.createMany({ data: incidents });
     checks += raw.length;
   }
+  const heartbeats = await seedHeartbeats(user.id, now, rand);
 
   console.log(
-    `Seeded ${DEMO_EMAIL} with ${monitors.length} monitors, ${checks} recent checks and ${HISTORY_DAYS} days of history.`,
+    `Seeded ${DEMO_EMAIL} with ${monitors.length} monitors, ${heartbeats} heartbeats, ${checks} recent checks and ${HISTORY_DAYS} days of history.`,
   );
 }
 
