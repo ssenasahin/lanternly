@@ -11,7 +11,8 @@
     "db",
     "api",
     "worker",
-    "agent"
+    "agent",
+    "web"
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
@@ -22,7 +23,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "dev": "npm run dev -w api"
+    "dev": "concurrently -n api,web -c yellow,cyan \"npm run dev -w api\" \"npm run dev -w web\""
   },
   "overrides": {
     "deepmerge-ts": "^8.0.0"
@@ -30,8 +31,10 @@
   "devDependencies": {
     "@eslint/js": "^9.39.5",
     "@types/node": "^22.10.0",
+    "concurrently": "^10.0.6",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.13.0",
     "prettier": "^3.9.10",
     "tsx": "^4.23.15",
