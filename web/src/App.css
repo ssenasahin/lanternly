@@ -9,8 +9,7 @@
 }
 
 .splash h1 {
-  font-size: 2.5rem;
-  letter-spacing: -0.03em;
+  margin-bottom: var(--space-1);
 }
 
 .splash-status {

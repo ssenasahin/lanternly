@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { CircleCheck, CircleX, LoaderCircle } from "lucide-react";
 import "./App.css";
+import { Logo } from "./brand/Logo";
 
 interface Health {
   status: "ok" | "degraded";
@@ -20,7 +21,9 @@ export function App() {
 
   return (
     <main className="splash">
-      <h1>Lanternly</h1>
+      <h1>
+        <Logo size={52} />
+      </h1>
       <p className="muted">Uptime monitoring for the jobs nobody watches.</p>
 
       <div className="splash-status" role="status">
