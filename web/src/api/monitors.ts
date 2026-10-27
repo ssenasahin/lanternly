@@ -2,8 +2,18 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { Status } from "../components";
 import { api } from "./client";
 
-export type MonitorType = "HTTP" | "PING";
+export type MonitorType = "HTTP" | "PING" | "HEARTBEAT";
 export type MonitorStatus = "PENDING" | "UP" | "DOWN" | "DEGRADED" | "PAUSED";
+
+// What a heartbeat expects, as monitor lists carry it. The ping URL is not here: it
+// comes only with the heartbeat itself (see api/heartbeats).
+export interface HeartbeatSchedule {
+  periodSec: number | null;
+  cron: string | null;
+  timezone: string;
+  graceSec: number;
+  lastPingAt: string | null;
+}
 
 export interface Monitor {
   id: string;
@@ -18,6 +28,8 @@ export interface Monitor {
   lastCheckedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  // Set for heartbeats only.
+  heartbeat: HeartbeatSchedule | null;
 }
 
 // One hour of the last 24, oldest first, as the list's strip shows it.
@@ -32,8 +44,10 @@ export interface ListedMonitor extends Monitor {
 
 export type MonitorInput = Pick<
   Monitor,
-  "name" | "type" | "target" | "intervalSec" | "timeoutMs" | "retries"
->;
+  "name" | "target" | "intervalSec" | "timeoutMs" | "retries"
+> & {
+  type: "HTTP" | "PING";
+};
 
 export interface Check {
   id: string;
@@ -94,6 +108,8 @@ export const monitorKeys = {
   detail: (id: string) => ["monitors", id] as const,
   checks: (id: string) => ["monitors", id, "checks"] as const,
   stats: (id: string, range: Range) => ["monitors", id, "stats", range] as const,
+  heartbeat: (id: string) => ["monitors", id, "heartbeat"] as const,
+  pings: (id: string) => ["monitors", id, "pings"] as const,
 };
 
 export function useMonitors() {

@@ -69,7 +69,8 @@ export const NEW_MONITOR: MonitorForm = {
 export function toForm(monitor: Monitor): MonitorForm {
   return {
     name: monitor.name,
-    type: monitor.type,
+    // Heartbeats have a form of their own and never get here.
+    type: monitor.type === "PING" ? "PING" : "HTTP",
     target: monitor.target,
     intervalSec: monitor.intervalSec,
     timeoutSec: monitor.timeoutMs / 1000,

@@ -100,7 +100,9 @@ function IncidentRow({ incident: i, now }: { incident: Incident; now: number }) 
         <Link to={`/monitors/${i.monitor.id}`} className="incident-monitor">
           {i.monitor.name}
         </Link>
-        <div className="incident-target mono">{i.monitor.target}</div>
+        <div className="incident-target mono">
+          {i.monitor.type === "HEARTBEAT" ? "heartbeat" : i.monitor.target}
+        </div>
       </td>
       <td>
         <span className="mono">{formatTime(i.startedAt)}</span>

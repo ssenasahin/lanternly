@@ -1,4 +1,4 @@
-import { ChevronRight, Globe, Plus, Radar, Radio, Search, SearchX } from "lucide-react";
+import { ChevronRight, Globe, HeartPulse, Plus, Radar, Radio, Search, SearchX } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 import {
@@ -18,14 +18,19 @@ import {
   UptimeStrip,
   type StripSlot,
 } from "../../components";
-import { formatPercent, formatSeconds, timeAgo } from "../../lib/format";
+import { describeSchedule, formatPercent, formatSeconds, timeAgo } from "../../lib/format";
 import "../pages.css";
 import "./monitors.css";
 
-const addButton = (
-  <Link to="/monitors/new" className="btn btn-primary">
-    <Plus size={16} aria-hidden /> Add monitor
-  </Link>
+const addButtons = (
+  <div className="row">
+    <Link to="/heartbeats/new" className="btn">
+      <HeartPulse size={16} aria-hidden /> Add heartbeat
+    </Link>
+    <Link to="/monitors/new" className="btn btn-primary">
+      <Plus size={16} aria-hidden /> Add monitor
+    </Link>
+  </div>
 );
 
 type Filter = "all" | "down" | "up" | "paused";
@@ -76,10 +81,7 @@ export function MonitorListPage() {
   const needle = query.trim().toLowerCase();
   const shown = all
     .filter((m) => MATCHES[filter](m.status))
-    .filter(
-      (m) =>
-        !needle || m.name.toLowerCase().includes(needle) || m.target.toLowerCase().includes(needle),
-    )
+    .filter((m) => !needle || `${m.name} ${subtitle(m)}`.toLowerCase().includes(needle))
     .sort(SORTS[sort]);
 
   return (
@@ -89,7 +91,7 @@ export function MonitorListPage() {
           <h1>Monitors</h1>
           <p>Websites, APIs and servers Lanternly checks on a schedule.</p>
         </div>
-        {all.length > 0 && addButton}
+        {all.length > 0 && addButtons}
       </header>
 
       {monitors.isPending && (
@@ -109,9 +111,9 @@ export function MonitorListPage() {
 
       {monitors.data?.length === 0 && (
         <section className="card">
-          <EmptyState icon={Radar} title="No monitors yet" action={addButton}>
+          <EmptyState icon={Radar} title="No monitors yet" action={addButtons}>
             Add a website, API or server and Lanternly will check it straight away, then every
-            minute or so.
+            minute or so. Or add a heartbeat, and your cron job tells Lanternly each time it runs.
           </EmptyState>
         </section>
       )}
@@ -207,8 +209,16 @@ function hourSlots(slots: HourSlot[]): StripSlot[] {
   });
 }
 
+// The second line of a row: what is checked, or what a heartbeat expects.
+function subtitle(m: ListedMonitor): string {
+  return m.heartbeat ? `heartbeat, ${describeSchedule(m.heartbeat)}` : m.target;
+}
+
+const TYPE_ICONS = { HTTP: Globe, PING: Radio, HEARTBEAT: HeartPulse };
+
 function MonitorRow({ monitor: m }: { monitor: ListedMonitor }) {
-  const TypeIcon = m.type === "HTTP" ? Globe : Radio;
+  const TypeIcon = TYPE_ICONS[m.type];
+  const lastPing = m.heartbeat?.lastPingAt;
   const uptime = dayUptime(m.lastDay);
   return (
     <li>
@@ -218,7 +228,7 @@ function MonitorRow({ monitor: m }: { monitor: ListedMonitor }) {
           <span className="monitor-name">{m.name}</span>
           <span className="monitor-target">
             <TypeIcon size={12} aria-hidden />
-            {m.target}
+            {subtitle(m)}
           </span>
         </span>
         <span className="monitor-day">
@@ -229,8 +239,19 @@ function MonitorRow({ monitor: m }: { monitor: ListedMonitor }) {
           <span className="monitor-uptime">{formatPercent(uptime)}</span>
         </span>
         <span className="monitor-meta">
-          <span>every {formatSeconds(m.intervalSec)}</span>
-          <span>{m.lastCheckedAt ? `checked ${timeAgo(m.lastCheckedAt)}` : "not checked yet"}</span>
+          {m.heartbeat ? (
+            <>
+              <span>grace {formatSeconds(m.heartbeat.graceSec)}</span>
+              <span>{lastPing ? `pinged ${timeAgo(lastPing)}` : "no ping yet"}</span>
+            </>
+          ) : (
+            <>
+              <span>every {formatSeconds(m.intervalSec)}</span>
+              <span>
+                {m.lastCheckedAt ? `checked ${timeAgo(m.lastCheckedAt)}` : "not checked yet"}
+              </span>
+            </>
+          )}
         </span>
         <ChevronRight size={16} className="monitor-chevron" aria-hidden />
       </Link>

@@ -82,7 +82,11 @@ export function formatPercent(ratio: number | null): string {
 // "320 ms", "1.24 s".
 export function formatMs(ms: number | null): string {
   if (ms === null) return "–";
-  return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(2)} s`;
+  if (ms < 1000) return `${ms} ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(2)} s`;
+  // Heartbeat runs can take minutes; responses never do.
+  const seconds = Math.round(ms / 1000);
+  return seconds % 60 ? `${Math.floor(seconds / 60)} min ${seconds % 60} s` : `${seconds / 60} min`;
 }
 
 // "35 min", "2 h 5 min", "3 d 4 h": how long an incident lasted (or has lasted).
@@ -102,4 +106,19 @@ export function formatBucket(at: string, bucketSec: number): string {
   const day = start.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
   const time = (d: Date) => d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
   return `${day}, ${time(start)}–${time(end)}`;
+}
+
+// A heartbeat's period in the largest whole unit: "5 min", "1 h", "1 day", "7 days".
+export function formatPeriod(seconds: number): string {
+  if (seconds % 86_400 === 0) {
+    const days = seconds / 86_400;
+    return `${days} ${days === 1 ? "day" : "days"}`;
+  }
+  if (seconds % 3600 === 0) return `${seconds / 3600} h`;
+  return formatSeconds(seconds);
+}
+
+// What a heartbeat expects, in a few words: "every 1 h" or "cron 0 3 * * *".
+export function describeSchedule(schedule: { periodSec: number | null; cron: string | null }) {
+  return schedule.cron ? `cron ${schedule.cron}` : `every ${formatPeriod(schedule.periodSec ?? 0)}`;
 }

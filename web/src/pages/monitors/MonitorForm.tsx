@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Globe, Radio } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, Navigate, useNavigate, useParams } from "react-router";
 import { ApiError, api } from "../../api/client";
 import { monitorKeys, useMonitor, type Monitor } from "../../api/monitors";
 import { Alert, SelectField, SkeletonRows, TextField } from "../../components";
@@ -33,6 +33,9 @@ function EditMonitor({ id }: { id: string }) {
   }
   if (monitor.error instanceof ApiError && monitor.error.status === 404) return <NotFoundPage />;
   if (monitor.isError) return <Alert tone="error">Couldn't load this monitor.</Alert>;
+  if (monitor.data.monitor.type === "HEARTBEAT") {
+    return <Navigate to={`/heartbeats/${id}/edit`} replace />;
+  }
   // Mounted only once the monitor has loaded, so the form starts from its values.
   return <MonitorEditor existing={monitor.data.monitor} />;
 }
