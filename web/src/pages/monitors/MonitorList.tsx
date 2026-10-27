@@ -1,8 +1,24 @@
-import { ChevronRight, Globe, Plus, Radar, Radio } from "lucide-react";
+import { ChevronRight, Globe, Plus, Radar, Radio, Search, SearchX } from "lucide-react";
+import { useState } from "react";
 import { Link } from "react-router";
-import { badgeStatus, useMonitors, type Monitor, type MonitorStatus } from "../../api/monitors";
-import { Alert, EmptyState, SkeletonRows, StatusBadge } from "../../components";
-import { formatSeconds, timeAgo } from "../../lib/format";
+import {
+  badgeStatus,
+  useMonitors,
+  type HourSlot,
+  type ListedMonitor,
+  type MonitorStatus,
+} from "../../api/monitors";
+import {
+  Alert,
+  EmptyState,
+  Segmented,
+  SelectField,
+  SkeletonRows,
+  StatusBadge,
+  UptimeStrip,
+  type StripSlot,
+} from "../../components";
+import { formatPercent, formatSeconds, timeAgo } from "../../lib/format";
 import "../pages.css";
 import "./monitors.css";
 
@@ -12,11 +28,59 @@ const addButton = (
   </Link>
 );
 
-// Down monitors first: the list is read top to bottom, and that's what needs attention.
-const ORDER: Record<MonitorStatus, number> = { DOWN: 0, DEGRADED: 1, PENDING: 2, UP: 3, PAUSED: 4 };
+type Filter = "all" | "down" | "up" | "paused";
+const FILTERS = [
+  { value: "all", label: "All" },
+  { value: "down", label: "Down" },
+  { value: "up", label: "Up" },
+  { value: "paused", label: "Paused" },
+] as const;
+
+const MATCHES: Record<Filter, (s: MonitorStatus) => boolean> = {
+  all: () => true,
+  down: (s) => s === "DOWN" || s === "DEGRADED",
+  up: (s) => s === "UP",
+  paused: (s) => s === "PAUSED",
+};
+
+type Sort = "status" | "name" | "uptime";
+// Down first: the list is read top to bottom, and that's what needs attention.
+const STATUS_ORDER: Record<MonitorStatus, number> = {
+  DOWN: 0,
+  DEGRADED: 1,
+  PENDING: 2,
+  UP: 3,
+  PAUSED: 4,
+};
+
+function dayUptime(slots: HourSlot[]): number | null {
+  const checks = slots.reduce((n, s) => n + s.checks, 0);
+  const failures = slots.reduce((n, s) => n + s.failures, 0);
+  return checks === 0 ? null : (checks - failures) / checks;
+}
+
+const SORTS: Record<Sort, (a: ListedMonitor, b: ListedMonitor) => number> = {
+  status: (a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || a.name.localeCompare(b.name),
+  name: (a, b) => a.name.localeCompare(b.name),
+  // Lowest first; monitors with no checks yet go last.
+  uptime: (a, b) => (dayUptime(a.lastDay) ?? 2) - (dayUptime(b.lastDay) ?? 2),
+};
 
 export function MonitorListPage() {
   const monitors = useMonitors();
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<Filter>("all");
+  const [sort, setSort] = useState<Sort>("status");
+
+  const all = monitors.data ?? [];
+  const needle = query.trim().toLowerCase();
+  const shown = all
+    .filter((m) => MATCHES[filter](m.status))
+    .filter(
+      (m) =>
+        !needle || m.name.toLowerCase().includes(needle) || m.target.toLowerCase().includes(needle),
+    )
+    .sort(SORTS[sort]);
 
   return (
     <>
@@ -25,7 +89,7 @@ export function MonitorListPage() {
           <h1>Monitors</h1>
           <p>Websites, APIs and servers Lanternly checks on a schedule.</p>
         </div>
-        {monitors.data && monitors.data.length > 0 && addButton}
+        {all.length > 0 && addButton}
       </header>
 
       {monitors.isPending && (
@@ -52,17 +116,60 @@ export function MonitorListPage() {
         </section>
       )}
 
-      {monitors.data && monitors.data.length > 0 && (
+      {all.length > 0 && (
         <>
-          <Summary monitors={monitors.data} />
+          <Summary monitors={all} />
+          <div className="list-controls">
+            <label className="search">
+              <Search size={15} aria-hidden />
+              <input
+                type="search"
+                className="input"
+                placeholder="Search by name or address"
+                aria-label="Search monitors"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+            <Segmented label="Show" options={FILTERS} value={filter} onChange={setFilter} />
+            <SelectField
+              label="Sort by"
+              className="sort-select"
+              value={sort}
+              onChange={(e) => setSort(e.target.value as Sort)}
+            >
+              <option value="status">Status</option>
+              <option value="name">Name</option>
+              <option value="uptime">Uptime, lowest first</option>
+            </SelectField>
+          </div>
+
           <section className="card">
-            <ul className="monitor-list">
-              {[...monitors.data]
-                .sort((a, b) => ORDER[a.status] - ORDER[b.status])
-                .map((m) => (
+            {shown.length === 0 ? (
+              <EmptyState
+                icon={SearchX}
+                title="Nothing matches"
+                action={
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      setQuery("");
+                      setFilter("all");
+                    }}
+                  >
+                    Clear filters
+                  </button>
+                }
+              >
+                No monitor fits both the search and the filter.
+              </EmptyState>
+            ) : (
+              <ul className="monitor-list">
+                {shown.map((m) => (
                   <MonitorRow key={m.id} monitor={m} />
                 ))}
-            </ul>
+              </ul>
+            )}
           </section>
         </>
       )}
@@ -70,7 +177,7 @@ export function MonitorListPage() {
   );
 }
 
-function Summary({ monitors }: { monitors: Monitor[] }) {
+function Summary({ monitors }: { monitors: ListedMonitor[] }) {
   const count = (status: MonitorStatus) => monitors.filter((m) => m.status === status).length;
   const down = count("DOWN");
   return (
@@ -89,8 +196,20 @@ function Summary({ monitors }: { monitors: Monitor[] }) {
   );
 }
 
-function MonitorRow({ monitor: m }: { monitor: Monitor }) {
+// Labels each hour of the strip with its clock time, for the tooltips.
+function hourSlots(slots: HourSlot[]): StripSlot[] {
+  const hour = (d: Date) => d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  const end = Date.now();
+  return slots.map((s, i) => {
+    const to = new Date(end - (slots.length - 1 - i) * 3_600_000);
+    const from = new Date(to.getTime() - 3_600_000);
+    return { ...s, label: `${hour(from)}–${hour(to)}` };
+  });
+}
+
+function MonitorRow({ monitor: m }: { monitor: ListedMonitor }) {
   const TypeIcon = m.type === "HTTP" ? Globe : Radio;
+  const uptime = dayUptime(m.lastDay);
   return (
     <li>
       <Link to={`/monitors/${m.id}`} className="monitor-row">
@@ -101,6 +220,13 @@ function MonitorRow({ monitor: m }: { monitor: Monitor }) {
             <TypeIcon size={12} aria-hidden />
             {m.target}
           </span>
+        </span>
+        <span className="monitor-day">
+          <UptimeStrip
+            slots={hourSlots(m.lastDay)}
+            label={`Last 24 hours: ${formatPercent(uptime)} uptime`}
+          />
+          <span className="monitor-uptime">{formatPercent(uptime)}</span>
         </span>
         <span className="monitor-meta">
           <span>every {formatSeconds(m.intervalSec)}</span>

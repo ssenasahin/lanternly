@@ -69,3 +69,37 @@ export function formatTime(iso: string): string {
     second: "2-digit",
   });
 }
+
+// "99.98%", "100%", "–" when there were no checks. Two decimals because the difference
+// between 99.9% and 99.99% is most of a month's downtime budget.
+export function formatPercent(ratio: number | null): string {
+  if (ratio === null) return "–";
+  if (ratio === 1) return "100%";
+  // Never round a monitor with failures up to 100%.
+  return `${(Math.floor(ratio * 10000) / 100).toFixed(2)}%`;
+}
+
+// "320 ms", "1.24 s".
+export function formatMs(ms: number | null): string {
+  if (ms === null) return "–";
+  return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(2)} s`;
+}
+
+// "35 min", "2 h 5 min", "3 d 4 h": how long an incident lasted (or has lasted).
+export function formatDuration(ms: number): string {
+  const minutes = Math.max(1, Math.round(ms / 60_000));
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return minutes % 60 ? `${hours} h ${minutes % 60} min` : `${hours} h`;
+  const days = Math.floor(hours / 24);
+  return hours % 24 ? `${days} d ${hours % 24} h` : `${days} d`;
+}
+
+// "27 Oct, 14:00–14:15": the period one chart bucket covers.
+export function formatBucket(at: string, bucketSec: number): string {
+  const start = new Date(at);
+  const end = new Date(start.getTime() + bucketSec * 1000);
+  const day = start.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const time = (d: Date) => d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  return `${day}, ${time(start)}–${time(end)}`;
+}
