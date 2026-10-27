@@ -20,6 +20,10 @@ enum MonitorType {
   // A request of the owner's design, its answer checked against a status list and rules.
   API
   PING
+  // Up when a TCP connection to host:port opens.
+  TCP
+  // Up when a DNS lookup answers, with the expected value if one is set.
+  DNS
   // Checked the other way round: the job pings Lanternly, and silence is the alarm.
   HEARTBEAT
 }
@@ -37,6 +41,14 @@ enum BodyType {
   NONE
   JSON
   FORM
+}
+
+enum DnsRecordType {
+  A
+  AAAA
+  CNAME
+  MX
+  TXT
 }
 
 enum AssertionOperator {
@@ -172,6 +184,7 @@ model Monitor {
   heartbeat  Heartbeat?
   apiRequest ApiRequest?
   assertions Assertion[]
+  dnsQuery   DnsQuery?
 
   @@index([ownerId])
   @@map("monitors")
@@ -292,6 +305,20 @@ model Assertion {
 
   @@index([monitorId, position])
   @@map("assertions")
+}
+
+// What a DNS monitor asks for. The name it asks about is the monitor's target.
+model DnsQuery {
+  monitorId  String        @id @map("monitor_id") @db.Uuid
+  recordType DnsRecordType @default(A) @map("record_type")
+  // A value that must be among the answers; null accepts any answer.
+  expected   String?
+  // A public DNS server's address to ask instead of the system's resolver.
+  resolver   String?
+
+  monitor Monitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  @@map("dns_queries")
 }
 
 model Incident {

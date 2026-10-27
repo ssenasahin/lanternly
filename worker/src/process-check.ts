@@ -18,20 +18,25 @@ export async function processCheck(
 ) {
   const monitor = await prisma.monitor.findUnique({
     where: { id: monitorId },
-    include: { apiRequest: true, assertions: { orderBy: { position: "asc" } } },
+    include: {
+      apiRequest: true,
+      assertions: { orderBy: { position: "asc" } },
+      dnsQuery: true,
+    },
   });
   // Deleted or paused after this job was queued.
   if (!monitor || !monitor.isActive) return;
   // Heartbeats aren't checked; their pings and the lateness search drive them. A
   // stray job left from before a monitor's type changed has nothing to do.
-  const { type, apiRequest, assertions } = monitor;
+  const { type, apiRequest, assertions, dnsQuery } = monitor;
   if (type === "HEARTBEAT") return;
 
   const api =
     type === "API" && apiRequest
       ? toApiSpec(monitor.target, apiRequest, assertions, encryptionKey)
       : null;
-  const result = await runCheck({ ...monitor, type, api }, resolve);
+  const dns = type === "DNS" ? (dnsQuery ?? null) : null;
+  const result = await runCheck({ ...monitor, type, api, dns }, resolve);
   const alert = await recordCheck(prisma, monitor.id, monitor.status, result);
   if (alert) await notify(alert);
 }

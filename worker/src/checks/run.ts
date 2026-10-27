@@ -7,16 +7,20 @@ import {
   type Attempt,
   type Resolve,
 } from "@lanternly/db";
+import { checkDns, type DnsSettings } from "./dns.js";
 import { checkPing } from "./ping.js";
+import { checkTcp } from "./tcp.js";
 
 export interface CheckSettings {
-  type: "HTTP" | "API" | "PING";
+  type: "HTTP" | "API" | "PING" | "TCP" | "DNS";
   target: string;
   timeoutMs: number;
   retries: number;
   slowAfterMs: number | null;
   // How to call an API monitor; null for the other types.
   api: Omit<ApiRequestSpec, "url"> | null;
+  // What a DNS monitor asks for; null for the other types.
+  dns: DnsSettings | null;
 }
 
 // Runs the first attempt plus up to `retries` more, stopping at the first success.
@@ -29,6 +33,13 @@ export async function runCheck(
 ): Promise<Attempt> {
   const attempt = async (): Promise<Attempt> => {
     if (monitor.type === "PING") return checkPing(monitor.target, monitor.timeoutMs, resolve);
+    if (monitor.type === "TCP") return checkTcp(monitor.target, monitor.timeoutMs, resolve);
+    if (monitor.type === "DNS") {
+      // A DNS monitor's target is the name it asks about, so the SSRF guard has no
+      // say: nothing connects to it. The server it asks is checked instead.
+      const dns = monitor.dns ?? { recordType: "A", expected: null, resolver: null };
+      return checkDns(monitor.target, dns, monitor.timeoutMs);
+    }
     if (monitor.type === "HTTP" || !monitor.api) {
       return checkHttp(monitor.target, monitor.timeoutMs, resolve);
     }
