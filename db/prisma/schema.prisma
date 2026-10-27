@@ -121,8 +121,14 @@ model User {
   totpLastStep  Int?      @map("totp_last_step")
   failedLogins  Int       @default(0) @map("failed_logins")
   lockedUntil   DateTime? @map("locked_until")
+  // Set by an admin: no sign-in, no API access, no checks or alerts until cleared.
+  suspendedAt   DateTime? @map("suspended_at")
+  // Null means the default plan, so changing the default moves everyone on it.
+  planId        String?   @map("plan_id") @db.Uuid
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  plan Plan? @relation(fields: [planId], references: [id], onDelete: SetNull)
 
   monitors    Monitor[]
   channels    NotificationChannel[]
@@ -132,8 +138,46 @@ model User {
   sessions    Session[]
   resetTokens PasswordResetToken[]
   backupCodes BackupCode[]
+  auditLogs   AuditLog[]
 
   @@map("users")
+}
+
+// What an account may use. Exactly one plan is the default, for everyone without one.
+model Plan {
+  id             String   @id @default(uuid()) @db.Uuid
+  name           String   @unique
+  maxMonitors    Int      @map("max_monitors")
+  maxChannels    Int      @map("max_channels")
+  maxApiKeys     Int      @map("max_api_keys")
+  minIntervalSec Int      @map("min_interval_sec")
+  isDefault      Boolean  @default(false) @map("is_default")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  users User[]
+
+  @@map("plans")
+}
+
+// Every admin action: who, what, to whom, from where. Rows are only ever added.
+// The actor's email is copied in, so the record survives the account's deletion.
+model AuditLog {
+  id         BigInt   @id @default(autoincrement())
+  actorId    String?  @map("actor_id") @db.Uuid
+  actorEmail String   @map("actor_email")
+  action     String
+  // What the action was done to, as an id and as it read at the time.
+  targetId   String?  @map("target_id")
+  target     String?
+  ip         String?
+  detail     Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([targetId])
+  @@map("audit_logs")
 }
 
 // A key for the public REST API. Only its hash is kept; the key is shown once.
