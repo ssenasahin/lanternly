@@ -11,12 +11,14 @@ const META: Record<Status, { label: string; Icon: LucideIcon }> = {
   pending: { label: "Pending", Icon: Clock },
 };
 
-export function StatusBadge({ status }: { status: Status }) {
-  const { label, Icon } = META[status];
+// `label` renames the state where the default word would mislead, like an incident
+// that's over: green and checked, but "Resolved", not "Operational".
+export function StatusBadge({ status, label }: { status: Status; label?: string }) {
+  const { label: defaultLabel, Icon } = META[status];
   return (
     <span className={`badge badge-${status}`}>
       <Icon size={13} strokeWidth={2.5} aria-hidden />
-      {label}
+      {label ?? defaultLabel}
     </span>
   );
 }

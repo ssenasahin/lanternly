@@ -358,3 +358,87 @@
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+
+/* --- Uptime strip: thin slots with a 2px surface gap, no borders --- */
+.strip {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 22px;
+}
+
+.strip-slot {
+  flex: 1 1 0;
+  min-width: 3px;
+  border-radius: 2px;
+  background: var(--raised);
+}
+
+.strip-slot.is-up {
+  background: var(--good);
+  opacity: 0.75;
+}
+
+.strip-slot.is-down {
+  background: var(--bad);
+}
+
+.strip-slot:hover {
+  opacity: 1;
+  outline: 1px solid var(--text);
+  outline-offset: 1px;
+}
+
+/* --- Stat tiles: label above, value big, never tabular figures --- */
+/* Tiles come in threes, so they always share one row: auto-fit would leave one
+   tile alone on a second row on phones. Narrow screens shrink the tile instead. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.tile {
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.tile-label {
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.tile-value {
+  margin-top: 4px;
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.tile-note {
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--faint);
+}
+
+.segmented-sm label {
+  height: 26px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 560px) {
+  .tiles {
+    gap: var(--space-2);
+  }
+
+  .tile {
+    padding: var(--space-3);
+  }
+
+  .tile-value {
+    font-size: var(--text-lg);
+  }
+}
