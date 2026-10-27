@@ -3,6 +3,17 @@ import { PrismaClient } from "@prisma/client";
 // Besides the Prisma client, this package holds the code the API and the worker share.
 export * from "@prisma/client";
 export { decryptSecret, encryptSecret, parseEncryptionKey } from "./crypto.js";
+export { deliver, openConfig, sealConfig, type DeliverOptions } from "./channels/deliver.js";
+export { guardedTransport } from "./channels/transport.js";
+export {
+  DeliveryError,
+  SECRET_FIELDS,
+  type AlertMessage,
+  type ChannelConfig,
+  type ConfigOf,
+  type Transport,
+} from "./channels/types.js";
+export { SIGNATURE_HEADER, signWebhook, TIMESTAMP_HEADER } from "./channels/webhook.js";
 export {
   emailLayout,
   escapeHtml,
@@ -25,6 +36,20 @@ export {
   type ApiRequestSpec,
 } from "./checks/api.js";
 export { formatHostPort, HostPortError, parseHostPort } from "./checks/host-port.js";
+export {
+  ackLink,
+  ESCALATIONS_QUEUE,
+  escalationJobId,
+  MAX_ESCALATION_STEPS,
+  queueEscalationCanceller,
+  readSteps,
+  signAck,
+  verifyAck,
+  type EscalationCanceller,
+  type EscalationJob,
+  type EscalationStep,
+  type EscalationTarget,
+} from "./escalation.js";
 export { checkHttp } from "./checks/http.js";
 export {
   describeFailure,
@@ -46,6 +71,10 @@ export {
   type HeartbeatSchedule,
 } from "./heartbeats.js";
 export {
+  AGENTS_QUEUE,
+  queueAgentReports,
+  type AgentReportJob,
+  type AgentReports,
   CHECKS_QUEUE,
   HEARTBEATS_QUEUE,
   isScheduled,
