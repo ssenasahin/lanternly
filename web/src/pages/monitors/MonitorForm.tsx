@@ -1,12 +1,14 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Braces, Globe, Network, Plug, Radio } from "lucide-react";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm, useWatch, type UseFormReturn } from "react-hook-form";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
+import { usePolicies } from "../../api/alerts";
 import { ApiError, api } from "../../api/client";
 import { monitorKeys, useMonitor, type Monitor } from "../../api/monitors";
 import { Alert, SelectField, SkeletonRows, TextField } from "../../components";
 import { formatSeconds } from "../../lib/format";
+import { AgentEditor } from "../agents/AgentEdit";
 import { NotFoundPage } from "../NotFound";
 import { RequestFields, ResponseFields } from "./ApiFields";
 import { DnsFields } from "./DnsFields";
@@ -68,6 +70,7 @@ function EditMonitor({ id }: { id: string }) {
   if (monitor.data.monitor.type === "HEARTBEAT") {
     return <Navigate to={`/heartbeats/${id}/edit`} replace />;
   }
+  if (monitor.data.monitor.type === "AGENT") return <AgentEditor monitor={monitor.data.monitor} />;
   // Mounted only once the monitor has loaded, so the form starts from its values.
   return <MonitorEditor existing={monitor.data.monitor} />;
 }
@@ -279,6 +282,11 @@ function MonitorEditor({ existing }: { existing?: Monitor }) {
           </div>
         </div>
 
+        <div className="card-body form-section form-section-split">
+          <h2 className="section-title">Alerts</h2>
+          <EscalationField form={form} />
+        </div>
+
         <div className="card-body form-actions">
           <Link to={cancelTo} className="btn btn-ghost">
             Cancel
@@ -289,5 +297,43 @@ function MonitorEditor({ existing }: { existing?: Monitor }) {
         </div>
       </form>
     </>
+  );
+}
+
+// Who hears when it goes down. Without a policy, the owner and every enabled channel
+// hear at once; a policy alerts its first step and escalates from there.
+function EscalationField({ form }: { form: UseFormReturn<MonitorForm> }) {
+  const policies = usePolicies();
+  const {
+    register,
+    formState: { errors },
+  } = form;
+  // Mounted once the options exist, so the saved choice has an option to select.
+  if (!policies.data) {
+    return (
+      <SelectField label="Escalation policy" disabled>
+        <option>{policies.isError ? "Couldn't load policies" : "Loading…"}</option>
+      </SelectField>
+    );
+  }
+  return (
+    <SelectField
+      label="Escalation policy"
+      hint={
+        <>
+          Without one, you and every enabled channel hear at once.{" "}
+          <Link to="/escalation">Manage policies</Link>
+        </>
+      }
+      error={errors.escalationPolicyId?.message}
+      {...register("escalationPolicyId")}
+    >
+      <option value="">None: alert me and every channel</option>
+      {policies.data.map((p) => (
+        <option key={p.id} value={p.id}>
+          {p.name}
+        </option>
+      ))}
+    </SelectField>
   );
 }

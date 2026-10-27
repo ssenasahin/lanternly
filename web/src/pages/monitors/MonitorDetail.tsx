@@ -4,6 +4,7 @@ import { ApiError } from "../../api/client";
 import { badgeStatus, useChecks, useMonitor, type Monitor } from "../../api/monitors";
 import { Alert, EmptyState, SkeletonRows, StatusBadge } from "../../components";
 import { describeSchedule, formatMs, formatSeconds, formatTime, timeAgo } from "../../lib/format";
+import { AgentBody } from "../agents/AgentBody";
 import { HeartbeatBody } from "../heartbeats/HeartbeatBody";
 import { NotFoundPage } from "../NotFound";
 import { ApiFailure, ApiSettingsCard } from "./ApiDetail";
@@ -59,15 +60,17 @@ export function MonitorDetailPage() {
         {openIncident && (
           <Alert tone="error">
             <strong>Down since {formatTime(openIncident.startedAt)}</strong> (
-            {timeAgo(openIncident.startedAt)}). {openIncident.cause ?? "No response"}. You'll get an
-            email when it's back up.
+            {timeAgo(openIncident.startedAt)}). {openIncident.cause ?? "No response"}.{" "}
+            <Link to={`/incidents/${openIncident.id}`}>See who was alerted</Link>
           </Alert>
         )}
         {!monitor.isActive && (
           <Alert tone="info">
             {isHeartbeat
               ? "Paused. Pings are still logged, but a missed or failed run raises no alert until you resume it."
-              : "Paused. No checks run and no alerts go out until you resume it."}
+              : monitor.type === "AGENT"
+                ? "Paused. The agent's reports are still charted, but raise no alert until you resume it."
+                : "Paused. No checks run and no alerts go out until you resume it."}
           </Alert>
         )}
         {isHeartbeat && monitor.isActive && monitor.status === "PENDING" && (
@@ -76,7 +79,13 @@ export function MonitorDetailPage() {
           </Alert>
         )}
 
-        {isHeartbeat ? <HeartbeatBody id={monitor.id} /> : <CheckedBody monitor={monitor} />}
+        {isHeartbeat ? (
+          <HeartbeatBody id={monitor.id} />
+        ) : monitor.type === "AGENT" ? (
+          <AgentBody monitor={monitor} />
+        ) : (
+          <CheckedBody monitor={monitor} />
+        )}
       </div>
     </>
   );
@@ -100,6 +109,7 @@ function CheckedBody({ monitor }: { monitor: Monitor }) {
         <Fact label="Last checked">
           {monitor.lastCheckedAt ? timeAgo(monitor.lastCheckedAt) : "Not yet"}
         </Fact>
+        <Fact label="Escalation">{monitor.escalationPolicy?.name ?? "None: everyone at once"}</Fact>
         {monitor.dns && (
           <>
             <Fact label="Expects">
@@ -129,6 +139,13 @@ function Target({ monitor }: { monitor: Monitor }) {
       <p className="detail-target mono">
         heartbeat, {describeSchedule(monitor.heartbeat)}
         {cron && timezone !== "UTC" ? ` (${timezone})` : ""}
+      </p>
+    );
+  }
+  if (monitor.type === "AGENT") {
+    return (
+      <p className="detail-target mono">
+        server agent{monitor.agent?.hostname ? ` on ${monitor.agent.hostname}` : ""}
       </p>
     );
   }

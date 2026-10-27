@@ -26,6 +26,26 @@ const styleGuide = async () => ({
   Component: (await import("./pages/StyleGuide")).StyleGuidePage,
 });
 const brand = async () => ({ Component: (await import("./pages/Brand")).BrandPage });
+const channels = async () => ({
+  Component: (await import("./pages/alerts/Channels")).ChannelsPage,
+});
+const escalation = async () => ({
+  Component: (await import("./pages/alerts/Escalation")).EscalationPage,
+});
+const team = async () => ({ Component: (await import("./pages/alerts/Team")).TeamPage });
+const invite = async () => ({ Component: (await import("./pages/alerts/Invite")).InvitePage });
+const incident = async () => ({
+  Component: (await import("./pages/incidents/IncidentDetail")).IncidentDetailPage,
+});
+const acknowledge = async () => ({
+  Component: (await import("./pages/incidents/Acknowledge")).AcknowledgePage,
+});
+const agentNew = async () => ({
+  Component: (await import("./pages/agents/AgentNew")).AgentNewPage,
+});
+const apiKeys = async () => ({
+  Component: (await import("./pages/settings/ApiKeys")).ApiKeysPage,
+});
 
 const router = createBrowserRouter([
   {
@@ -44,6 +64,9 @@ const router = createBrowserRouter([
         handle: title("Reset password"),
       },
       { path: "/reset-password", element: <ResetPasswordPage />, handle: title("New password") },
+      // Opened from an alert, often on a phone with no session: the link's signature
+      // is the permission, so it sits outside the sign-in guard.
+      { path: "/ack/:id", lazy: acknowledge, handle: title("Acknowledge") },
     ],
   },
   {
@@ -66,8 +89,15 @@ const router = createBrowserRouter([
             lazy: heartbeatForm,
             handle: title("Edit heartbeat"),
           },
+          { path: "/agents/new", lazy: agentNew, handle: title("Add server") },
           { path: "/incidents", element: <IncidentsPage />, handle: title("Incidents") },
+          { path: "/incidents/:id", lazy: incident, handle: title("Incident") },
+          { path: "/channels", lazy: channels, handle: title("Channels") },
+          { path: "/escalation", lazy: escalation, handle: title("Escalation") },
+          { path: "/team", lazy: team, handle: title("Team") },
+          { path: "/invites/:token", lazy: invite, handle: title("Team invite") },
           { path: SECURITY_PATH, element: <SecurityPage />, handle: title("Security") },
+          { path: "/settings/api-keys", lazy: apiKeys, handle: title("API keys") },
           { path: "/styleguide", lazy: styleGuide, handle: title("Style guide") },
           { path: "/brand", lazy: brand, handle: title("Brand") },
           { path: "*", element: <NotFoundPage />, handle: title("Not found") },

@@ -9,6 +9,7 @@ export default defineConfig({
     // browser on one origin, so cookies and CORS behave as they will in production.
     proxy: {
       "/api": "http://localhost:4000",
+      "/docs": "http://localhost:4000",
     },
   },
 });

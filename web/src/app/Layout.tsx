@@ -1,4 +1,7 @@
 import {
+  BellRing,
+  KeyRound,
+  ListOrdered,
   LogOut,
   Moon,
   Palette,
@@ -7,6 +10,7 @@ import {
   ShieldCheck,
   Siren,
   Sun,
+  Users,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -30,13 +34,29 @@ const NAV: { heading: string; items: NavItem[] }[] = [
   {
     heading: "Monitor",
     items: [
-      { to: "/", label: "Monitors", icon: Radar, owns: ["/monitors/", "/heartbeats/"] },
+      {
+        to: "/",
+        label: "Monitors",
+        icon: Radar,
+        owns: ["/monitors/", "/heartbeats/", "/agents/"],
+      },
       { to: "/incidents", label: "Incidents", icon: Siren },
     ],
   },
   {
+    heading: "Alerts",
+    items: [
+      { to: "/channels", label: "Channels", icon: BellRing },
+      { to: "/escalation", label: "Escalation", icon: ListOrdered },
+      { to: "/team", label: "Team", icon: Users, owns: ["/invites/"] },
+    ],
+  },
+  {
     heading: "Account",
-    items: [{ to: SECURITY_PATH, label: "Security", icon: ShieldCheck }],
+    items: [
+      { to: SECURITY_PATH, label: "Security", icon: ShieldCheck },
+      { to: "/settings/api-keys", label: "API keys", icon: KeyRound },
+    ],
   },
   {
     heading: "Design",
