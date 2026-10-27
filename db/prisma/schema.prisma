@@ -1,0 +1,129 @@
+// The single source of truth for Lanternly's data. Models use camelCase in
+// TypeScript and are mapped to snake_case tables and columns in PostgreSQL.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  SUPER_ADMIN
+}
+
+enum MonitorType {
+  HTTP
+  PING
+}
+
+// PENDING until the first check finishes, so a new monitor never shows as down.
+enum MonitorStatus {
+  PENDING
+  UP
+  DOWN
+  DEGRADED
+  PAUSED
+}
+
+enum CheckStatus {
+  UP
+  DOWN
+  DEGRADED
+}
+
+enum ChannelType {
+  EMAIL
+  SLACK
+  TELEGRAM
+  WEBHOOK
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  role         Role      @default(USER)
+  // Encrypted at rest; null until two-factor sign-in is set up.
+  totpSecret   String?   @map("totp_secret")
+  failedLogins Int       @default(0) @map("failed_logins")
+  lockedUntil  DateTime? @map("locked_until")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  monitors Monitor[]
+  channels NotificationChannel[]
+
+  @@map("users")
+}
+
+model Monitor {
+  id            String        @id @default(uuid()) @db.Uuid
+  ownerId       String        @map("owner_id") @db.Uuid
+  name          String
+  type          MonitorType
+  target        String
+  intervalSec   Int           @default(60) @map("interval_sec")
+  timeoutMs     Int           @default(10000) @map("timeout_ms")
+  retries       Int           @default(1)
+  isActive      Boolean       @default(true) @map("is_active")
+  status        MonitorStatus @default(PENDING)
+  lastCheckedAt DateTime?     @map("last_checked_at")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  owner     User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  checks    CheckResult[]
+  incidents Incident[]
+
+  @@index([ownerId])
+  @@map("monitors")
+}
+
+model CheckResult {
+  id         BigInt      @id @default(autoincrement())
+  monitorId  String      @map("monitor_id") @db.Uuid
+  status     CheckStatus
+  responseMs Int?        @map("response_ms")
+  statusCode Int?        @map("status_code")
+  error      String?
+  checkedAt  DateTime    @default(now()) @map("checked_at")
+
+  monitor Monitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  // Every chart and uptime figure reads one monitor's results over a time range.
+  @@index([monitorId, checkedAt])
+  @@map("check_results")
+}
+
+model Incident {
+  id         String    @id @default(uuid()) @db.Uuid
+  monitorId  String    @map("monitor_id") @db.Uuid
+  startedAt  DateTime  @default(now()) @map("started_at")
+  // Null while the incident is still open.
+  resolvedAt DateTime? @map("resolved_at")
+  cause      String?
+
+  monitor Monitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  @@index([monitorId, resolvedAt])
+  @@map("incidents")
+}
+
+model NotificationChannel {
+  id        String      @id @default(uuid()) @db.Uuid
+  ownerId   String      @map("owner_id") @db.Uuid
+  type      ChannelType
+  name      String
+  // AES-GCM ciphertext of the channel's JSON settings (webhook URLs, bot tokens).
+  config    String
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+  @@map("notification_channels")
+}
