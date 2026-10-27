@@ -1,6 +1,7 @@
 import "./ui.css";
 
 export { Alert } from "./Alert";
+export { CopyButton } from "./CopyButton";
 export { EmptyState } from "./EmptyState";
 export { Segmented } from "./Segmented";
 export { SelectField } from "./SelectField";
