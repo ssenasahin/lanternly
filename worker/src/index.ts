@@ -1,6 +1,9 @@
 // Runs checks, opens and closes incidents, and sends notifications.
 import {
+  AGENTS_QUEUE,
   CHECKS_QUEUE,
+  ESCALATIONS_QUEUE,
+  escalationJobId,
   HEARTBEATS_QUEUE,
   NOTIFICATIONS_QUEUE,
   notificationJobId,
@@ -8,14 +11,17 @@ import {
   prisma,
   redisConnection,
   smtpMailer,
+  type AgentReportJob,
   type CheckJob,
+  type EscalationJob,
   type NotificationJob,
   type PingJob,
 } from "@lanternly/db";
 import { Queue, Worker } from "bullmq";
 import { loadEnv } from "./env.js";
 import { markLateHeartbeats, processPing } from "./heartbeats.js";
-import { sendNotification } from "./notify.js";
+import { evaluateAgent, markSilentAgents, pruneOldAgentMetrics } from "./agents.js";
+import { escalate, sendNotification, type AlertDeps } from "./alerts.js";
 import { processCheck } from "./process-check.js";
 import { pruneOldPings, rollUpOldChecks } from "./rollup.js";
 import { reconcileSchedules } from "./schedule.js";
@@ -40,6 +46,8 @@ const checks = new Queue<CheckJob>(CHECKS_QUEUE, { connection });
 const notifications = new Queue<NotificationJob>(NOTIFICATIONS_QUEUE, { connection });
 const maintenance = new Queue(MAINTENANCE_QUEUE, { connection });
 const heartbeats = new Queue<PingJob>(HEARTBEATS_QUEUE, { connection });
+const escalations = new Queue<EscalationJob>(ESCALATIONS_QUEUE, { connection });
+const agents = new Queue<AgentReportJob>(AGENTS_QUEUE, { connection });
 
 const notify = (alert: NotificationJob) =>
   notifications.add(alert.kind, alert, {
@@ -63,6 +71,13 @@ await heartbeats.upsertJobScheduler(
   { name: "find-late", opts: { removeOnComplete: true, removeOnFail: { count: 30 } } },
 );
 
+// Agents that stopped reporting are looked for every minute, like silent heartbeats.
+await agents.upsertJobScheduler(
+  "find-silent-agents",
+  { every: 60_000 },
+  { name: "find-silent", opts: { removeOnComplete: true, removeOnFail: { count: 30 } } },
+);
+
 const checkWorker = new Worker<CheckJob>(
   CHECKS_QUEUE,
   (job) => processCheck(job.data.monitorId, { prisma, notify, encryptionKey }),
@@ -84,9 +99,45 @@ const heartbeatWorker = new Worker<PingJob>(
   { connection },
 );
 
+const alertDeps: AlertDeps = {
+  prisma,
+  mailer,
+  webOrigin: env.WEB_ORIGIN,
+  encryptionKey,
+  // A delayed job per step; acknowledging an incident removes it by name.
+  scheduleEscalation: (job, delayMs) =>
+    escalations.add("escalate", job, {
+      jobId: escalationJobId(job.incidentId, job.step),
+      delay: delayMs,
+      attempts: 3,
+      backoff: { type: "exponential", delay: 10_000 },
+      removeOnComplete: true,
+      removeOnFail: { age: 7 * 24 * 60 * 60 },
+    }),
+};
+
 const notificationWorker = new Worker<NotificationJob>(
   NOTIFICATIONS_QUEUE,
-  (job) => sendNotification(job.data, { prisma, mailer, webOrigin: env.WEB_ORIGIN }),
+  (job) => sendNotification(job.data, alertDeps),
+  { connection },
+);
+
+const escalationWorker = new Worker<EscalationJob>(
+  ESCALATIONS_QUEUE,
+  (job) => escalate(job.data, alertDeps),
+  { connection },
+);
+
+const agentWorker = new Worker<AgentReportJob>(
+  AGENTS_QUEUE,
+  async (job) => {
+    if (job.name === "report") {
+      await evaluateAgent(job.data.agentId, { prisma, notify });
+      return;
+    }
+    const silent = await markSilentAgents({ prisma, notify });
+    if (silent > 0) console.log(`${silent} agents went quiet`);
+  },
   { connection },
 );
 
@@ -97,11 +148,20 @@ const maintenanceWorker = new Worker(
     console.log(`rolled up ${hours} monitor-hours of results older than ${cutoff.toISOString()}`);
     const pings = await pruneOldPings(prisma);
     if (pings > 0) console.log(`deleted ${pings} heartbeat pings older than a month`);
+    const samples = await pruneOldAgentMetrics(prisma);
+    if (samples > 0) console.log(`deleted ${samples} agent samples older than a month`);
   },
   { connection },
 );
 
-for (const worker of [checkWorker, notificationWorker, maintenanceWorker, heartbeatWorker]) {
+for (const worker of [
+  checkWorker,
+  notificationWorker,
+  maintenanceWorker,
+  heartbeatWorker,
+  escalationWorker,
+  agentWorker,
+]) {
   worker.on("failed", (job, err) => {
     console.error(`${worker.name} job ${job?.id ?? "?"} failed:`, err.message);
   });
@@ -128,12 +188,16 @@ async function shutdown() {
     notificationWorker.close(),
     maintenanceWorker.close(),
     heartbeatWorker.close(),
+    escalationWorker.close(),
+    agentWorker.close(),
   ]);
   await Promise.all([
     checks.close(),
     notifications.close(),
     maintenance.close(),
     heartbeats.close(),
+    escalations.close(),
+    agents.close(),
     prisma.$disconnect(),
   ]);
   await connection.quit();

@@ -1,11 +1,4 @@
-import {
-  emailLayout,
-  escapeHtml,
-  type Mail,
-  type Mailer,
-  type NotificationJob,
-  type PrismaClient,
-} from "@lanternly/db";
+import { emailLayout, escapeHtml, type Mail } from "@lanternly/db";
 
 export interface IncidentDetails {
   monitor: { id: string; name: string; target: string };
@@ -39,10 +32,20 @@ const button = (href: string, label: string) =>
 const targetRow = (target: string) => (target ? row("Target", escapeHtml(target)) : "");
 const targetLine = (target: string) => (target ? [`Target: ${target}`] : []);
 
+export interface IncidentEmailOptions {
+  // A signed link that acknowledges the incident without signing in.
+  ackLink?: string | null;
+  // Sent because nobody acknowledged the first alert in time.
+  escalated?: boolean;
+  // Said under the details instead of the default: what happens next.
+  note?: string | null;
+}
+
 export function incidentEmail(
   kind: "down" | "up",
-  incident: IncidentDetails,
+  incident: IncidentDetails & { id?: string },
   webOrigin: string,
+  { ackLink = null, escalated = false, note = null }: IncidentEmailOptions = {},
 ): Omit<Mail, "to"> {
   const { monitor } = incident;
   const link = `${webOrigin}/monitors/${monitor.id}`;
@@ -51,26 +54,30 @@ export function incidentEmail(
 
   if (kind === "down") {
     const cause = incident.cause ?? "No response";
+    const still = escalated ? "still " : "";
+    const next = note ?? "Lanternly will email you again when it's back up.";
     return {
-      subject: `Down: ${monitor.name}`,
+      subject: `${escalated ? "Still down" : "Down"}: ${monitor.name}`,
       text: [
-        `${monitor.name} is down.`,
+        `${monitor.name} is ${still}down.`,
         ``,
         ...targetLine(monitor.target),
         `Cause: ${cause}`,
         `Since: ${formatUtc(incident.startedAt)}`,
         ``,
-        `Lanternly will email you again when it's back up.`,
+        next,
         link,
+        ...(ackLink ? [``, `Acknowledge it: ${ackLink}`] : []),
       ].join("\n"),
       html: emailLayout(
-        `<span style="color:#f04438">●</span> ${name} is down`,
+        `<span style="color:#f04438">●</span> ${name} is ${still}down`,
         `<table style="border-collapse:collapse;font-size:14px">` +
           targetRow(monitor.target) +
           row("Cause", escapeHtml(cause)) +
           row("Since", formatUtc(incident.startedAt)) +
           `</table>` +
-          `<p style="margin:20px 0 0;color:#8b939d;font-size:14px">We'll email you again when it's back up. No more alerts until then.</p>` +
+          `<p style="margin:20px 0 0;color:#8b939d;font-size:14px">${escapeHtml(next)}</p>` +
+          (ackLink ? button(ackLink, "Acknowledge") : "") +
           button(link, "Open monitor"),
       ),
     };
@@ -136,42 +143,4 @@ export function slowEmail(check: SlowCheckDetails, webOrigin: string): Omit<Mail
         button(link, "Open monitor"),
     ),
   };
-}
-
-export interface NotifyDeps {
-  prisma: PrismaClient;
-  mailer: Mailer;
-  webOrigin: string;
-}
-
-// Runs from the notifications queue, so a mail server hiccup is retried with backoff
-// instead of losing the alert or slowing down the checks.
-export async function sendNotification(
-  job: NotificationJob,
-  { prisma, mailer, webOrigin }: NotifyDeps,
-) {
-  const monitorSelect = {
-    select: { id: true, name: true, target: true, owner: { select: { email: true } } },
-  } as const;
-
-  if (job.kind === "degraded") {
-    const check = await prisma.checkResult.findUnique({
-      where: { id: BigInt(job.checkId) },
-      include: { monitor: monitorSelect },
-    });
-    // Deleted with its monitor, or rolled up into hourly totals already.
-    if (!check) return;
-    await mailer.send({ to: check.monitor.owner.email, ...slowEmail(check, webOrigin) });
-    return;
-  }
-
-  const incident = await prisma.incident.findUnique({
-    where: { id: job.incidentId },
-    include: { monitor: monitorSelect },
-  });
-  // The monitor (and with it the incident) was deleted before the email went out.
-  if (!incident) return;
-
-  const mail = incidentEmail(job.kind, incident, webOrigin);
-  await mailer.send({ to: incident.monitor.owner.email, ...mail });
 }
