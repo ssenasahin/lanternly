@@ -23,6 +23,7 @@ import {
   withStoredSecrets,
   type ApiSettings,
 } from "./api-settings.js";
+import { dnsFields, dnsSettings, presentDns } from "./dns-settings.js";
 import { lastDayStrips, RANGES, rangeStats, uptimeWindows, type Range } from "./stats.js";
 import { checkTarget } from "./target.js";
 
@@ -31,7 +32,7 @@ export const MAX_MONITORS_PER_USER = 50;
 
 const fields = {
   name: z.string().trim().min(1, "Give the monitor a name").max(100),
-  type: z.enum(["HTTP", "API", "PING"]),
+  type: z.enum(["HTTP", "API", "PING", "TCP", "DNS"]),
   target: z.string().trim().min(1, "Enter what to monitor").max(2048),
   intervalSec: z.int().min(30, "Check at most every 30 seconds").max(300),
   timeoutMs: z.int().min(1000, "Allow at least 1 second").max(30_000),
@@ -39,6 +40,8 @@ const fields = {
   slowAfterMs: z.int().min(10, "Allow at least 10 ms").max(30_000).nullable(),
   // Only API monitors use it; for the other types it's ignored.
   api: apiSettings,
+  // Only DNS monitors use it.
+  dns: dnsSettings,
 };
 
 const createSchema = z.object({
@@ -48,6 +51,7 @@ const createSchema = z.object({
   retries: fields.retries.default(1),
   slowAfterMs: fields.slowAfterMs.default(null),
   api: fields.api.optional(),
+  dns: fields.dns.optional(),
 });
 
 const updateSchema = z.object(fields).partial();
@@ -95,6 +99,7 @@ const monitorFields = {
     select: { periodSec: true, cron: true, timezone: true, graceSec: true, lastPingAt: true },
   },
   ...apiFields,
+  ...dnsFields,
 } satisfies Prisma.MonitorSelect;
 
 type SelectedMonitor = Prisma.MonitorGetPayload<{ select: typeof monitorFields }>;
@@ -156,8 +161,12 @@ export function monitorRouter({
   });
 
   // The monitor as the browser sees it: API settings unwrapped, secrets left out.
-  function present({ apiRequest, assertions, ...monitor }: SelectedMonitor) {
-    return { ...monitor, api: presentApi({ apiRequest, assertions }, encryptionKey) };
+  function present({ apiRequest, assertions, dnsQuery, ...monitor }: SelectedMonitor) {
+    return {
+      ...monitor,
+      api: presentApi({ apiRequest, assertions }, encryptionKey),
+      dns: presentDns(dnsQuery),
+    };
   }
 
   // The headers to store or send: the ones given, with secrets the browser left out
@@ -220,7 +229,7 @@ export function monitorRouter({
 
   router.post("/", async (req, res) => {
     const { userId } = authOf(req);
-    const { api, ...input } = validate(createSchema, req.body);
+    const { api, dns, ...input } = validate(createSchema, req.body);
     assertTiming(input);
 
     const count = await prisma.monitor.count({ where: { ownerId: userId } });
@@ -234,6 +243,9 @@ export function monitorRouter({
       const given = api ?? apiSettings.parse({});
       const { request, assertions } = apiRows(given, resolveHeaders(given), encryptionKey);
       settings = { apiRequest: { create: request }, assertions: { create: assertions } };
+    }
+    if (input.type === "DNS") {
+      settings = { dnsQuery: { create: dns ?? dnsSettings.parse({}) } };
     }
     const monitor = await prisma.monitor.create({
       data: { ...input, target, ownerId: userId, ...settings },
@@ -314,7 +326,7 @@ export function monitorRouter({
   router.patch("/:id", async (req, res) => {
     const { userId } = authOf(req);
     const { id } = validate(idParams, req.params);
-    const { api, ...input } = validate(updateSchema, req.body);
+    const { api, dns, ...input } = validate(updateSchema, req.body);
     const current = await findOwned(id, userId);
     // A heartbeat has a schedule rather than a target and an interval.
     if (current.type === "HEARTBEAT") {
@@ -340,7 +352,15 @@ export function monitorRouter({
       data.apiRequest = { delete: true };
       data.assertions = { deleteMany: {} };
     }
-    // Switching between HTTP and ping changes what the target means, so recheck it.
+    if (next.type === "DNS") {
+      if (dns || !current.dnsQuery) {
+        const query = dns ?? dnsSettings.parse({});
+        data.dnsQuery = { upsert: { create: query, update: query } };
+      }
+    } else if (current.dnsQuery) {
+      data.dnsQuery = { delete: true };
+    }
+    // Switching types changes what the target means, so recheck it.
     if (input.target !== undefined || input.type !== undefined) {
       data.target = await checkTarget(next.type, next.target, resolveHost);
       // The old results describe a different target; wait for a fresh check.
