@@ -10,7 +10,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useMatches } from "react-router";
+import { NavLink, Outlet, useLocation, useMatches } from "react-router";
 import { useAuth, useUser } from "../auth/AuthProvider";
 import { SECURITY_PATH } from "../auth/guards";
 import { Logo } from "../brand/Logo";
@@ -22,13 +22,15 @@ interface NavItem {
   to: string;
   label: string;
   icon: LucideIcon;
+  // Other paths that belong to this section, so it stays highlighted on them.
+  owns?: string;
 }
 
 const NAV: { heading: string; items: NavItem[] }[] = [
   {
     heading: "Monitor",
     items: [
-      { to: "/", label: "Monitors", icon: Radar },
+      { to: "/", label: "Monitors", icon: Radar, owns: "/monitors/" },
       { to: "/incidents", label: "Incidents", icon: Siren },
     ],
   },
@@ -53,6 +55,7 @@ export function Layout() {
   const title = usePageTitle();
   const scrolled = useScrolled();
   const [theme, setTheme] = useState<Theme>(readTheme);
+  const { pathname } = useLocation();
 
   useEffect(() => applyTheme(theme), [theme]);
 
@@ -67,8 +70,15 @@ export function Layout() {
           {NAV.map((section) => (
             <div className="nav-section" key={section.heading}>
               <span className="nav-heading">{section.heading}</span>
-              {section.items.map(({ to, label, icon: Icon }) => (
-                <NavLink key={to} to={to} end={to === "/"} className="nav-link">
+              {section.items.map(({ to, label, icon: Icon, owns }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={to === "/"}
+                  className={({ isActive }) =>
+                    isActive || (owns && pathname.startsWith(owns)) ? "nav-link active" : "nav-link"
+                  }
+                >
                   <Icon size={16} aria-hidden />
                   {label}
                 </NavLink>

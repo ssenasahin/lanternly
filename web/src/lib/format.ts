@@ -49,3 +49,23 @@ export function safeNext(next: string | null): string {
     ? next
     : "/";
 }
+
+// "30 s", "1 min", "2 min 30 s": a check interval or timeout, short.
+export function formatSeconds(total: number): string {
+  if (total < 60) return `${total} s`;
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return seconds ? `${minutes} min ${seconds} s` : `${minutes} min`;
+}
+
+// A precise timestamp for tables: "27 Oct, 14:11:56", in the viewer's time zone but in
+// English like the rest of the interface.
+export function formatTime(iso: string): string {
+  return new Date(iso).toLocaleString("en-GB", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
