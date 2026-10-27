@@ -29,7 +29,7 @@ export async function processCheck(
   // Heartbeats aren't checked; their pings and the lateness search drive them. A
   // stray job left from before a monitor's type changed has nothing to do.
   const { type, apiRequest, assertions, dnsQuery } = monitor;
-  if (type === "HEARTBEAT") return;
+  if (type === "HEARTBEAT" || type === "AGENT") return;
 
   const api =
     type === "API" && apiRequest

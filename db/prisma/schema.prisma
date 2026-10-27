@@ -26,6 +26,8 @@ enum MonitorType {
   DNS
   // Checked the other way round: the job pings Lanternly, and silence is the alarm.
   HEARTBEAT
+  // A server's agent reporting CPU, memory and disk. Silence or a full disk is the alarm.
+  AGENT
 }
 
 enum HttpMethod {
@@ -82,8 +84,25 @@ enum CheckStatus {
   DEGRADED
 }
 
+enum TeamRole {
+  OWNER
+  MEMBER
+}
+
+// What happened to an incident, in order, for its timeline.
+enum IncidentEventType {
+  OPENED
+  NOTIFIED
+  // A delivery that didn't arrive, with the reason.
+  NOT_DELIVERED
+  ESCALATED
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+// Email isn't a channel: alerts are emailed to the account's owner and to team
+// members who accepted an invite, never to an address someone merely typed in.
 enum ChannelType {
-  EMAIL
   SLACK
   TELEGRAM
   WEBHOOK
@@ -107,11 +126,33 @@ model User {
 
   monitors    Monitor[]
   channels    NotificationChannel[]
+  ownedTeam   Team?
+  apiKeys     ApiKey[]
+  memberships TeamMember[]
   sessions    Session[]
   resetTokens PasswordResetToken[]
   backupCodes BackupCode[]
 
   @@map("users")
+}
+
+// A key for the public REST API. Only its hash is kept; the key is shown once.
+model ApiKey {
+  id         String    @id @default(uuid()) @db.Uuid
+  ownerId    String    @map("owner_id") @db.Uuid
+  name       String
+  keyHash    String    @unique @map("key_hash")
+  // The key's first characters, so the owner can tell keys apart.
+  prefix     String
+  lastUsedAt DateTime? @map("last_used_at")
+  // Revoked keys stay listed, so it's clear what stopped working and when.
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+  @@map("api_keys")
 }
 
 // One row per signed-in device. The refresh token itself is never stored, only its hash.
@@ -177,14 +218,19 @@ model Monitor {
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
-  owner      User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  checks     CheckResult[]
-  rollups    CheckRollup[]
-  incidents  Incident[]
-  heartbeat  Heartbeat?
-  apiRequest ApiRequest?
-  assertions Assertion[]
-  dnsQuery   DnsQuery?
+  owner              User              @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  checks             CheckResult[]
+  rollups            CheckRollup[]
+  incidents          Incident[]
+  heartbeat          Heartbeat?
+  apiRequest         ApiRequest?
+  assertions         Assertion[]
+  dnsQuery           DnsQuery?
+  agent              Agent?
+  // Who hears about an outage, and who next if nobody acknowledges it. Null: the
+  // owner by email and every enabled channel, all at once.
+  escalationPolicyId String?           @map("escalation_policy_id") @db.Uuid
+  escalationPolicy   EscalationPolicy? @relation(fields: [escalationPolicyId], references: [id], onDelete: SetNull)
 
   @@index([ownerId])
   @@map("monitors")
@@ -321,28 +367,149 @@ model DnsQuery {
   @@map("dns_queries")
 }
 
-model Incident {
-  id         String    @id @default(uuid()) @db.Uuid
-  monitorId  String    @map("monitor_id") @db.Uuid
-  startedAt  DateTime  @default(now()) @map("started_at")
-  // Null while the incident is still open.
-  resolvedAt DateTime? @map("resolved_at")
-  cause      String?
+// The agent behind an AGENT monitor. Its key is shown once; only the hash is kept.
+model Agent {
+  monitorId  String    @id @map("monitor_id") @db.Uuid
+  keyHash    String    @unique @map("key_hash")
+  // The key's first characters, so the owner can tell keys apart.
+  keyPrefix  String    @map("key_prefix")
+  hostname   String?
+  platform   String?
+  lastSeenAt DateTime? @map("last_seen_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
 
-  monitor Monitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  monitor Monitor       @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  metrics AgentMetric[]
+
+  @@map("agents")
+}
+
+// One sample from an agent: percentages, 0 to 100.
+model AgentMetric {
+  id      BigInt   @id @default(autoincrement())
+  agentId String   @map("agent_id") @db.Uuid
+  at      DateTime
+  cpu     Float
+  memory  Float
+  disk    Float
+
+  agent Agent @relation(fields: [agentId], references: [monitorId], onDelete: Cascade)
+
+  @@index([agentId, at])
+  @@map("agent_metrics")
+}
+
+model Incident {
+  id             String    @id @default(uuid()) @db.Uuid
+  monitorId      String    @map("monitor_id") @db.Uuid
+  startedAt      DateTime  @default(now()) @map("started_at")
+  // Null while the incident is still open.
+  resolvedAt     DateTime? @map("resolved_at")
+  cause          String?
+  acknowledgedAt DateTime? @map("acknowledged_at")
+  // Who acknowledged it, in words: "ada@example.com" or "via the link sent to #ops".
+  acknowledgedBy String?   @map("acknowledged_by")
+  // The last escalation step that has been notified; 0 is the first.
+  escalationStep Int       @default(0) @map("escalation_step")
+
+  monitor Monitor         @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  events  IncidentEvent[]
 
   @@index([monitorId, resolvedAt])
   @@map("incidents")
 }
 
-model NotificationChannel {
-  id        String      @id @default(uuid()) @db.Uuid
-  ownerId   String      @map("owner_id") @db.Uuid
-  type      ChannelType
+model IncidentEvent {
+  id         BigInt            @id @default(autoincrement())
+  incidentId String            @map("incident_id") @db.Uuid
+  type       IncidentEventType
+  at         DateTime          @default(now())
+  // What the timeline says about it: who was told, by what, and why it failed.
+  detail     String?
+
+  incident Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([incidentId, at])
+  @@map("incident_events")
+}
+
+// Every user has one team, made the first time they open it. Its members are the
+// people escalation can reach.
+model Team {
+  id        String   @id @default(uuid()) @db.Uuid
+  ownerId   String   @unique @map("owner_id") @db.Uuid
   name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  owner    User               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  members  TeamMember[]
+  invites  TeamInvite[]
+  policies EscalationPolicy[]
+
+  @@map("teams")
+}
+
+model TeamMember {
+  teamId    String   @map("team_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  role      TeamRole @default(MEMBER)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([teamId, userId])
+  @@index([userId])
+  @@map("team_members")
+}
+
+// An emailed invitation. Only the token's hash is kept; accepting it needs an
+// account with the invited address.
+model TeamInvite {
+  id         String    @id @default(uuid()) @db.Uuid
+  teamId     String    @map("team_id") @db.Uuid
+  email      String
+  tokenHash  String    @unique @map("token_hash")
+  expiresAt  DateTime  @map("expires_at")
+  acceptedAt DateTime? @map("accepted_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId])
+  @@map("team_invites")
+}
+
+model EscalationPolicy {
+  id        String   @id @default(uuid()) @db.Uuid
+  teamId    String   @map("team_id") @db.Uuid
+  name      String
+  // [{ waitMinutes, targets: [{ kind: "member", userId } | { kind: "channel", channelId }] }]
+  // The first step's wait is 0: it's who hears first.
+  steps     Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  team     Team      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  monitors Monitor[]
+
+  @@index([teamId])
+  @@map("escalation_policies")
+}
+
+model NotificationChannel {
+  id         String      @id @default(uuid()) @db.Uuid
+  ownerId    String      @map("owner_id") @db.Uuid
+  type       ChannelType
+  name       String
   // AES-GCM ciphertext of the channel's JSON settings (webhook URLs, bot tokens).
-  config    String
-  createdAt DateTime    @default(now()) @map("created_at")
+  config     String
+  // Disabled channels keep their settings but get no alerts.
+  enabled    Boolean     @default(true)
+  lastSentAt DateTime?   @map("last_sent_at")
+  // Why the last delivery failed; null when it went through.
+  lastError  String?     @map("last_error")
+  createdAt  DateTime    @default(now()) @map("created_at")
 
   owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 

@@ -8,6 +8,30 @@ export const CHECKS_QUEUE = "checks";
 export const NOTIFICATIONS_QUEUE = "notifications";
 // Pings to apply to their heartbeat, plus the once-a-minute search for silent ones.
 export const HEARTBEATS_QUEUE = "heartbeats";
+// Agent reports to judge, plus the once-a-minute search for agents gone quiet.
+export const AGENTS_QUEUE = "agents";
+
+export interface AgentReportJob {
+  agentId: string;
+}
+
+// Hands a stored report to the worker, which decides whether the server is in trouble.
+export interface AgentReports {
+  add(job: AgentReportJob): Promise<void>;
+}
+
+export function queueAgentReports(queue: Queue<AgentReportJob>): AgentReports {
+  return {
+    async add(job) {
+      await queue.add("report", job, {
+        attempts: 3,
+        backoff: { type: "exponential", delay: 1000 },
+        removeOnComplete: true,
+        removeOnFail: { age: 24 * 60 * 60 },
+      });
+    },
+  };
+}
 
 // BullMQ wants a ready-made client in an ES module project. The worker waits out a
 // Redis restart (maxRetriesPerRequest: null) rather than failing every job; the API
@@ -62,14 +86,14 @@ export function queuePings(queue: Queue<PingJob>): PingQueue {
 
 export interface ScheduledMonitor {
   id: string;
-  type: "HTTP" | "API" | "PING" | "TCP" | "DNS" | "HEARTBEAT";
+  type: "HTTP" | "API" | "PING" | "TCP" | "DNS" | "HEARTBEAT" | "AGENT";
   intervalSec: number;
   isActive: boolean;
 }
 
-// Heartbeats are never checked on a schedule: they wait for the job to ping them.
+// Heartbeats and agents are never checked on a schedule: they call in themselves.
 export function isScheduled(monitor: Pick<ScheduledMonitor, "type" | "isActive">): boolean {
-  return monitor.isActive && monitor.type !== "HEARTBEAT";
+  return monitor.isActive && monitor.type !== "HEARTBEAT" && monitor.type !== "AGENT";
 }
 
 export interface MonitorScheduler {
