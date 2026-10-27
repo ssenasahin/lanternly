@@ -23,14 +23,14 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   // Other paths that belong to this section, so it stays highlighted on them.
-  owns?: string;
+  owns?: string[];
 }
 
 const NAV: { heading: string; items: NavItem[] }[] = [
   {
     heading: "Monitor",
     items: [
-      { to: "/", label: "Monitors", icon: Radar, owns: "/monitors/" },
+      { to: "/", label: "Monitors", icon: Radar, owns: ["/monitors/", "/heartbeats/"] },
       { to: "/incidents", label: "Incidents", icon: Siren },
     ],
   },
@@ -76,7 +76,9 @@ export function Layout() {
                   to={to}
                   end={to === "/"}
                   className={({ isActive }) =>
-                    isActive || (owns && pathname.startsWith(owns)) ? "nav-link active" : "nav-link"
+                    isActive || owns?.some((path) => pathname.startsWith(path))
+                      ? "nav-link active"
+                      : "nav-link"
                   }
                 >
                   <Icon size={16} aria-hidden />

@@ -19,6 +19,9 @@ const title = (t: string): RouteHandle => ({ title: t });
 const monitorForm = async () => ({
   Component: (await import("./pages/monitors/MonitorForm")).MonitorFormPage,
 });
+const heartbeatForm = async () => ({
+  Component: (await import("./pages/heartbeats/HeartbeatForm")).HeartbeatFormPage,
+});
 const styleGuide = async () => ({
   Component: (await import("./pages/StyleGuide")).StyleGuidePage,
 });
@@ -56,6 +59,12 @@ const router = createBrowserRouter([
             path: "/monitors/:id/edit",
             lazy: monitorForm,
             handle: title("Edit monitor"),
+          },
+          { path: "/heartbeats/new", lazy: heartbeatForm, handle: title("Add heartbeat") },
+          {
+            path: "/heartbeats/:id/edit",
+            lazy: heartbeatForm,
+            handle: title("Edit heartbeat"),
           },
           { path: "/incidents", element: <IncidentsPage />, handle: title("Incidents") },
           { path: SECURITY_PATH, element: <SecurityPage />, handle: title("Security") },
