@@ -34,6 +34,15 @@
   --warn-soft: rgb(240 128 60 / 12%);
   --info-soft: rgb(91 157 245 / 12%);
 
+  /*
+   * Charts. The series colour is a step darker than the accent: a 2px line needs
+   * a mid-lightness hue to hold up against the surface (checked with the dataviz
+   * palette validator in both themes). Gridlines are the quietest line we have.
+   */
+  --chart-1: #c47d0f;
+  --chart-1-wash: rgb(196 125 15 / 10%);
+  --chart-grid: var(--line);
+
   --font-sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
 
@@ -86,6 +95,9 @@
   --bad: #c9302c;
   --warn: #b5501a;
   --info: #2563c9;
+
+  --chart-1: #9e5f00;
+  --chart-1-wash: rgb(158 95 0 / 10%);
 
   color-scheme: light;
 }

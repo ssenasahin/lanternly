@@ -7,6 +7,7 @@ import { badgeStatus, monitorKeys, useChecks, useMonitor, type Monitor } from ".
 import { Alert, EmptyState, SkeletonRows, StatusBadge } from "../../components";
 import { formatSeconds, formatTime, timeAgo } from "../../lib/format";
 import { NotFoundPage } from "../NotFound";
+import { MonitorIncidents, MonitorStats } from "./MonitorStats";
 import "../pages.css";
 import "./monitors.css";
 
@@ -62,6 +63,9 @@ export function MonitorDetailPage() {
         {!monitor.isActive && (
           <Alert tone="info">Paused. No checks run and no alerts go out until you resume it.</Alert>
         )}
+
+        <MonitorStats monitorId={monitor.id} />
+        <MonitorIncidents monitorId={monitor.id} />
 
         <dl className="card card-body facts">
           <Fact label="Check every">{formatSeconds(monitor.intervalSec)}</Fact>
