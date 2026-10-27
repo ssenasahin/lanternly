@@ -1,0 +1,13 @@
+# The image installs and builds from source; nothing local should leak in.
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+**/coverage
+.git
+.github
+.env
+.env.*
+docs
+.claude
+CLAUDE.md
+CLAUDE.local.md
