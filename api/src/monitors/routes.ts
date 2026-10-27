@@ -9,10 +9,10 @@ import {
   type Resolve,
   type ResolveHost,
 } from "@lanternly/db";
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
 import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
-import { authOf, requireAuth } from "../auth/middleware.js";
+import { authOf } from "../auth/middleware.js";
 import { HttpError, validate } from "../http.js";
 import {
   apiFields,
@@ -42,6 +42,8 @@ const fields = {
   api: apiSettings,
   // Only DNS monitors use it.
   dns: dnsSettings,
+  // Null: alert the owner and every channel at once.
+  escalationPolicyId: z.uuid().nullable(),
 };
 
 const createSchema = z.object({
@@ -52,6 +54,7 @@ const createSchema = z.object({
   slowAfterMs: fields.slowAfterMs.default(null),
   api: fields.api.optional(),
   dns: fields.dns.optional(),
+  escalationPolicyId: fields.escalationPolicyId.default(null),
 });
 
 const updateSchema = z.object(fields).partial();
@@ -98,6 +101,9 @@ const monitorFields = {
   heartbeat: {
     select: { periodSec: true, cron: true, timezone: true, graceSec: true, lastPingAt: true },
   },
+  escalationPolicy: { select: { id: true, name: true } },
+  // A server agent's host, as its last report gave it. Never its key.
+  agent: { select: { hostname: true, platform: true, lastSeenAt: true, keyPrefix: true } },
   ...apiFields,
   ...dnsFields,
 } satisfies Prisma.MonitorSelect;
@@ -130,7 +136,8 @@ function assertTiming({ intervalSec, timeoutMs, retries, slowAfterMs }: Timing) 
 export interface MonitorDeps {
   prisma: PrismaClient;
   scheduler: MonitorScheduler;
-  jwtSecret: string;
+  // A session in the dashboard, an API key on /api/v1: either way, req.auth is set.
+  authenticate: RequestHandler;
   // Seals and opens API monitors' headers.
   encryptionKey: Buffer;
   resolveHost?: ResolveHost;
@@ -142,13 +149,13 @@ export interface MonitorDeps {
 export function monitorRouter({
   prisma,
   scheduler,
-  jwtSecret,
+  authenticate,
   encryptionKey,
   resolveHost,
   checkResolve = (host) => resolvePublicHost(host, resolveHost),
 }: MonitorDeps) {
   const router = Router();
-  router.use(requireAuth(prisma, jwtSecret));
+  router.use(authenticate);
 
   // Each test is a real request to someone's server, sent on the user's say-so.
   const testLimit = rateLimit({
@@ -174,6 +181,17 @@ export function monitorRouter({
   function resolveHeaders(api: ApiSettings, current?: SelectedMonitor | null) {
     const stored = openHeaders(current?.apiRequest?.headers ?? null, encryptionKey);
     return withStoredSecrets(api.headers, stored);
+  }
+
+  // A policy belongs to the caller's team, or it doesn't exist as far as they know.
+  async function checkPolicy(id: string | null | undefined, ownerId: string) {
+    if (!id) return;
+    const policy = await prisma.escalationPolicy.findFirst({ where: { id, team: { ownerId } } });
+    if (!policy) {
+      throw new HttpError(400, "Invalid request", {
+        escalationPolicyId: ["No such escalation policy"],
+      });
+    }
   }
 
   // The database is the source of truth; the schedule follows it. If Redis is briefly
@@ -231,6 +249,7 @@ export function monitorRouter({
     const { userId } = authOf(req);
     const { api, dns, ...input } = validate(createSchema, req.body);
     assertTiming(input);
+    await checkPolicy(input.escalationPolicyId, userId);
 
     const count = await prisma.monitor.count({ where: { ownerId: userId } });
     if (count >= MAX_MONITORS_PER_USER) {
@@ -326,17 +345,37 @@ export function monitorRouter({
   router.patch("/:id", async (req, res) => {
     const { userId } = authOf(req);
     const { id } = validate(idParams, req.params);
-    const { api, dns, ...input } = validate(updateSchema, req.body);
+    const { api, dns, escalationPolicyId, ...input } = validate(updateSchema, req.body);
     const current = await findOwned(id, userId);
+    await checkPolicy(escalationPolicyId, userId);
     // A heartbeat has a schedule rather than a target and an interval.
     if (current.type === "HEARTBEAT") {
       throw new HttpError(400, "Edit a heartbeat at /api/heartbeats/:id");
+    }
+    // An agent has no target or timing to edit: only its name and who hears about it.
+    if (current.type === "AGENT") {
+      if (Object.keys(input).some((k) => k !== "name") || api || dns) {
+        throw new HttpError(400, "Only a server agent's name and escalation policy can change");
+      }
+      const data: Prisma.MonitorUpdateInput = { name: input.name };
+      if (escalationPolicyId !== undefined) {
+        data.escalationPolicy = escalationPolicyId
+          ? { connect: { id: escalationPolicyId } }
+          : { disconnect: true };
+      }
+      res.json({ monitor: present(await updateOwned(id, userId, data)) });
+      return;
     }
 
     const next = { ...current, ...input, type: input.type ?? current.type };
     assertTiming(next);
 
     const data: Prisma.MonitorUpdateInput = { ...input };
+    if (escalationPolicyId !== undefined) {
+      data.escalationPolicy = escalationPolicyId
+        ? { connect: { id: escalationPolicyId } }
+        : { disconnect: true };
+    }
     if (next.type === "API") {
       // New settings replace the old ones whole. A monitor turned into an API monitor
       // without any starts from the defaults.

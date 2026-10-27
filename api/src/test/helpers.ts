@@ -6,6 +6,7 @@ import {
   type MonitorScheduler,
   type PingJob,
   type PingQueue,
+  type Transport,
 } from "@lanternly/db";
 import { generate } from "otplib";
 import request, { type Response } from "supertest";
@@ -43,6 +44,10 @@ export async function resetDatabase(): Promise<void> {
   outbox.length = 0;
   schedule.clear();
   pingJobs.length = 0;
+  deliveries.length = 0;
+  cancelledEscalations.length = 0;
+  agentJobs.length = 0;
+  deliveryAnswer.status = 200;
   await prisma.$executeRawUnsafe("TRUNCATE TABLE users CASCADE");
 }
 
@@ -64,6 +69,20 @@ const memoryPings: PingQueue = {
   async add(job) {
     pingJobs.push(job);
   },
+};
+
+// Agent reports handed to the worker.
+export const agentJobs: string[] = [];
+
+// Incidents whose waiting escalation steps were called off.
+export const cancelledEscalations: string[] = [];
+
+// Alerts to Slack, Telegram and webhooks, caught on the way out. Tests set the answer.
+export const deliveries: { url: string; body: string; headers: Record<string, string> }[] = [];
+export const deliveryAnswer = { status: 200 };
+const memoryTransport: Transport = async (url, body, headers) => {
+  deliveries.push({ url, body, headers });
+  return { status: deliveryAnswer.status, text: deliveryAnswer.status === 200 ? "ok" : "" };
 };
 
 // Fake DNS for the SSRF tests. Any name not listed here doesn't exist.
@@ -95,6 +114,9 @@ export function makeApp(env: Partial<Env> = {}) {
     pings: memoryPings,
     resolveHost: fakeResolve,
     checkResolve: localResolve,
+    channelTransport: memoryTransport,
+    escalations: { cancel: async (id) => void cancelledEscalations.push(id) },
+    agentReports: { add: async (job) => void agentJobs.push(job.agentId) },
   });
 }
 

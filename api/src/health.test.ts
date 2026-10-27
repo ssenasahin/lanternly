@@ -12,6 +12,8 @@ function appWith(checkDatabase: () => Promise<void>) {
     mailer: { send: async () => {} },
     scheduler: { sync: async () => {}, remove: async () => {} },
     pings: { add: async () => {} },
+    escalations: { cancel: async () => {} },
+    agentReports: { add: async () => {} },
     checkDatabase,
   });
 }
