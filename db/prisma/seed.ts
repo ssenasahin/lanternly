@@ -1,7 +1,13 @@
 // Fills a fresh database with a demo account, a handful of realistic monitors and
 // 30 days of history, so charts and uptime figures have something true-to-life to
 // show the first time the dashboard opens.
-import { MonitorType, PrismaClient, type Prisma } from "@prisma/client";
+import {
+  MonitorType,
+  PrismaClient,
+  type AssertionOperator,
+  type CheckStatus,
+  type Prisma,
+} from "@prisma/client";
 import argon2 from "argon2";
 import { randomBytes } from "node:crypto";
 
@@ -11,8 +17,11 @@ const DEMO_EMAIL = "demo@lanternly.dev";
 
 interface Outage {
   daysAgo: number;
-  minutes: number;
+  // Unset for an outage still going on now.
+  minutes?: number;
   cause: string;
+  // The code that came back, when the server answered but something else was wrong.
+  statusCode?: number;
 }
 
 interface DemoMonitor {
@@ -22,7 +31,11 @@ interface DemoMonitor {
   intervalSec: number;
   // Typical response time; the history wanders around it.
   baseMs: number;
+  slowAfterMs?: number;
   outages: Outage[];
+  // An API monitor's rules, and what each failing check found.
+  rules?: { path: string; operator: AssertionOperator; expected: string | null }[];
+  failedRules?: Prisma.InputJsonArray;
 }
 
 const monitors: DemoMonitor[] = [
@@ -40,6 +53,8 @@ const monitors: DemoMonitor[] = [
     target: "https://httpbin.org/status/200",
     intervalSec: 60,
     baseMs: 420,
+    // Its spikes cross the line now and then: degraded, not down.
+    slowAfterMs: 1500,
     outages: [
       { daysAgo: 2.3, minutes: 14, cause: "Timed out after 10 s" },
       { daysAgo: 19.6, minutes: 41, cause: "HTTP 503" },
@@ -54,12 +69,48 @@ const monitors: DemoMonitor[] = [
     outages: [],
   },
   {
-    name: "Status JSON",
-    type: MonitorType.HTTP,
+    name: "Slides API",
+    type: MonitorType.API,
     target: "https://httpbin.org/json",
     intervalSec: 300,
     baseMs: 460,
-    outages: [{ daysAgo: 0.25, minutes: 35, cause: "Connection refused" }],
+    // Answering, but no longer with what the rules expect: down for the last 80 minutes.
+    outages: [
+      { daysAgo: 6.25, minutes: 35, cause: "Connection refused" },
+      {
+        daysAgo: 80 / 1440,
+        cause: 'slideshow.author should equal Lanternly Docs, got "Yours Truly"',
+        statusCode: 200,
+      },
+    ],
+    rules: [
+      { path: "slideshow.title", operator: "EQUALS", expected: "Sample Slide Show" },
+      { path: "slideshow.slides", operator: "EXISTS", expected: null },
+      { path: "slideshow.author", operator: "EQUALS", expected: "Lanternly Docs" },
+    ],
+    failedRules: [
+      {
+        path: "slideshow.title",
+        operator: "EQUALS",
+        expected: "Sample Slide Show",
+        passed: true,
+        received: '"Sample Slide Show"',
+      },
+      {
+        path: "slideshow.slides",
+        operator: "EXISTS",
+        expected: null,
+        passed: true,
+        received: '[{"title":"Wake up to WonderWidgets!","type":"all"},{"items":["Why <em>WonderW…',
+      },
+      {
+        path: "slideshow.author",
+        operator: "EQUALS",
+        expected: "Lanternly Docs",
+        passed: false,
+        received: '"Yours Truly"',
+      },
+    ],
   },
   {
     name: "Edge resolver",
@@ -90,16 +141,28 @@ function random(seed: number) {
 // What an HTTP check would have recorded: 200 when up, the code from an "HTTP 502"
 // cause when the server answered badly, nothing when it didn't answer at all.
 function statusCode(m: DemoMonitor, outage: Outage | undefined): number | null {
-  if (m.type !== MonitorType.HTTP) return null;
+  if (m.type === MonitorType.PING) return null;
   if (!outage) return 200;
+  if (outage.statusCode) return outage.statusCode;
   return outage.cause.startsWith("HTTP ") ? Number(outage.cause.slice(5)) : null;
+}
+
+// The verdict the worker would have written, a slow answer included.
+function judge(m: DemoMonitor, outage: Outage | undefined, responseMs: number | null) {
+  if (outage) return { status: "DOWN" as CheckStatus, error: outage.cause };
+  if (m.slowAfterMs && responseMs !== null && responseMs > m.slowAfterMs) {
+    const ms = (n: number) => `${n.toLocaleString("en-GB")} ms`;
+    const error = `Took ${ms(responseMs)}, over the ${ms(m.slowAfterMs)} limit`;
+    return { status: "DEGRADED" as CheckStatus, error };
+  }
+  return { status: "UP" as CheckStatus, error: null };
 }
 
 function history(m: DemoMonitor, monitorId: string, now: number, rand: () => number) {
   const step = m.intervalSec * 1000;
   const windows = m.outages.map((o) => {
     const start = Math.floor((now - o.daysAgo * DAY) / step) * step;
-    return { ...o, start, end: start + o.minutes * 60_000 };
+    return { ...o, start, end: o.minutes === undefined ? Infinity : start + o.minutes * 60_000 };
   });
   const rawSince = now - RAW_DAYS * DAY;
   const raw: Prisma.CheckResultCreateManyInput[] = [];
@@ -111,15 +174,19 @@ function history(m: DemoMonitor, monitorId: string, now: number, rand: () => num
     const hourOfDay = new Date(t).getUTCHours();
     const load = 1 + 0.25 * Math.sin(((hourOfDay - 9) / 24) * 2 * Math.PI);
     const spike = rand() < 0.015 ? 2 + rand() * 3 : 1;
-    const responseMs = outage ? null : Math.round(m.baseMs * load * spike * (0.85 + rand() * 0.3));
+    // A server that answered gets a time even when its answer was wrong.
+    const answered = !outage || outage.statusCode !== undefined;
+    const responseMs = answered
+      ? Math.round(m.baseMs * load * spike * (0.85 + rand() * 0.3))
+      : null;
 
     if (t >= rawSince) {
       raw.push({
         monitorId,
-        status: outage ? "DOWN" : "UP",
+        ...judge(m, outage, responseMs),
         responseMs,
         statusCode: statusCode(m, outage),
-        error: outage?.cause ?? null,
+        rules: outage?.statusCode ? m.failedRules : undefined,
         checkedAt: new Date(t),
       });
       continue;
@@ -148,7 +215,7 @@ function history(m: DemoMonitor, monitorId: string, now: number, rand: () => num
   const incidents = windows.map((w) => ({
     monitorId,
     startedAt: new Date(w.start),
-    resolvedAt: new Date(w.end),
+    resolvedAt: w.end === Infinity ? null : new Date(w.end),
     cause: w.cause,
   }));
   return { raw, rollups, incidents };
@@ -309,8 +376,13 @@ async function main() {
         type: demo.type,
         target: demo.target,
         intervalSec: demo.intervalSec,
-        status: "UP",
+        slowAfterMs: demo.slowAfterMs,
+        status: demo.outages.some((o) => o.minutes === undefined) ? "DOWN" : "UP",
         lastCheckedAt: new Date(now),
+        ...(demo.rules && {
+          apiRequest: { create: { expectedStatus: "200-299" } },
+          assertions: { create: demo.rules.map((r, position) => ({ position, ...r })) },
+        }),
       },
     });
     const { raw, rollups, incidents } = history(demo, monitor.id, now, rand);
