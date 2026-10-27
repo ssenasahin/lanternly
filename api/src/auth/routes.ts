@@ -1,61 +1,38 @@
-import { Prisma, type PrismaClient, type User } from "@lanternly/db";
-import type { CookieOptions, Request, Response } from "express";
+import { Prisma, type User } from "@lanternly/db";
 import { Router } from "express";
-import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
-import type { Env } from "../env.js";
 import { HttpError, validate } from "../http.js";
-import { afterFailedSignIn, isLocked } from "./lockout.js";
+import { isLocked } from "./lockout.js";
 import { authOf, requireAuth } from "./middleware.js";
 import { burnPasswordCheck, hashPassword, passwordProblem, verifyPassword } from "./password.js";
-import { createSession, revokeSession, rotateSession, type ClientInfo } from "./sessions.js";
-import { parseRefreshToken, signAccessToken } from "./tokens.js";
-
-export const REFRESH_COOKIE = "lanternly_refresh";
-
-// One message for every sign-in failure, so it never reveals whether an account exists.
-const INVALID_CREDENTIALS = "Invalid email or password";
-
-// Normalise first, then validate: pasted addresses often carry stray spaces.
-const email = z.string().trim().toLowerCase().pipe(z.email().max(254));
+import { resetRoutes } from "./reset.js";
+import { sessionRoutes } from "./session-routes.js";
+import { revokeSession, rotateSession } from "./sessions.js";
+import {
+  authLimiter,
+  clearFailedSignIns,
+  clientOf,
+  emailField,
+  INVALID_CREDENTIALS,
+  issueSession,
+  publicUser,
+  recordFailedSignIn,
+  REFRESH_COOKIE,
+  refreshCookieOptions,
+  type AuthDeps,
+} from "./shared.js";
+import { parseRefreshToken, signAccessToken, signChallengeToken } from "./tokens.js";
+import { twoFactorRoutes } from "./two-factor-routes.js";
 
 const credentials = z.object({
-  email,
+  email: emailField,
   password: z.string().min(1).max(256),
 });
 
-export function authRouter(env: Env, prisma: PrismaClient): Router {
+export function authRouter(deps: AuthDeps) {
+  const { env, prisma } = deps;
   const router = Router();
-
-  const limiter = rateLimit({
-    windowMs: 60_000,
-    limit: env.AUTH_RATE_LIMIT_PER_MINUTE,
-    standardHeaders: "draft-8",
-    legacyHeaders: false,
-    handler: (_req, res) => {
-      res.status(429).json({ error: "Too many attempts. Wait a minute and try again." });
-    },
-  });
-
-  // The refresh cookie is only ever sent to /api/auth, never to the rest of the API,
-  // and never from another site (SameSite=Strict) or to page scripts (HttpOnly).
-  const cookieOptions = (expires?: Date): CookieOptions => ({
-    httpOnly: true,
-    secure: true,
-    sameSite: "strict",
-    path: "/api/auth",
-    expires,
-  });
-
-  async function startSession(req: Request, res: Response, user: User, mfa: boolean) {
-    const { session, refreshToken } = await createSession(prisma, user.id, clientOf(req), mfa);
-    res.cookie(REFRESH_COOKIE, refreshToken, cookieOptions(session.expiresAt));
-    const accessToken = await signAccessToken(
-      { userId: user.id, sessionId: session.id, role: user.role, mfa },
-      env.JWT_SECRET,
-    );
-    return { accessToken, user: publicUser(user) };
-  }
+  const limiter = authLimiter(env.AUTH_RATE_LIMIT_PER_MINUTE);
 
   router.post("/register", limiter, async (req, res) => {
     const body = validate(credentials, req.body);
@@ -75,43 +52,37 @@ export function authRouter(env: Env, prisma: PrismaClient): Router {
       throw error;
     }
 
-    res.status(201).json(await startSession(req, res, user, false));
+    res.status(201).json(await issueSession(deps, req, res, user, false));
   });
 
   router.post("/login", limiter, async (req, res) => {
     const body = validate(credentials, req.body);
-    const now = new Date();
     const user = await prisma.user.findUnique({ where: { email: body.email } });
 
     // Unknown and locked accounts still pay for a full password check, so neither
     // the message nor the response time distinguishes them from a wrong password.
-    if (!user || isLocked(user.lockedUntil, now)) {
+    if (!user || isLocked(user.lockedUntil, new Date())) {
       await burnPasswordCheck(body.password);
       throw new HttpError(401, INVALID_CREDENTIALS);
     }
 
     if (!(await verifyPassword(user.passwordHash, body.password))) {
-      // Incrementing in the database keeps the count right under concurrent attempts.
-      const { failedLogins } = await prisma.user.update({
-        where: { id: user.id },
-        data: { failedLogins: { increment: 1 } },
-        select: { failedLogins: true },
-      });
-      const next = afterFailedSignIn(failedLogins, now);
-      if (next.lockedUntil) {
-        await prisma.user.update({ where: { id: user.id }, data: next });
-      }
+      await recordFailedSignIn(prisma, user.id);
       throw new HttpError(401, INVALID_CREDENTIALS);
     }
 
-    if (user.failedLogins > 0 || user.lockedUntil) {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { failedLogins: 0, lockedUntil: null },
+    // The password was right, but with two-factor on it only earns a short-lived
+    // ticket to the second step; no session exists until a code is checked.
+    if (user.totpEnabledAt) {
+      res.json({
+        twoFactorRequired: true,
+        challengeToken: await signChallengeToken(user.id, env.JWT_SECRET),
       });
+      return;
     }
 
-    res.json(await startSession(req, res, user, false));
+    await clearFailedSignIns(prisma, user);
+    res.json(await issueSession(deps, req, res, user, false));
   });
 
   router.post("/refresh", async (req, res) => {
@@ -120,19 +91,14 @@ export function authRouter(env: Env, prisma: PrismaClient): Router {
 
     const result = await rotateSession(prisma, parsed.sessionId, parsed.secret, clientOf(req));
     if (result.kind !== "rotated") {
-      res.clearCookie(REFRESH_COOKIE, cookieOptions());
+      res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
       throw new HttpError(401, "Your session has ended. Sign in again.");
     }
 
     const user = await prisma.user.findUniqueOrThrow({ where: { id: result.session.userId } });
-    res.cookie(REFRESH_COOKIE, result.refreshToken, cookieOptions(result.session.expiresAt));
+    res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions(result.session.expiresAt));
     const accessToken = await signAccessToken(
-      {
-        userId: user.id,
-        sessionId: result.session.id,
-        role: user.role,
-        mfa: result.session.mfa,
-      },
+      { userId: user.id, sessionId: result.session.id, role: user.role, mfa: result.session.mfa },
       env.JWT_SECRET,
     );
     res.json({ accessToken, user: publicUser(user) });
@@ -143,7 +109,7 @@ export function authRouter(env: Env, prisma: PrismaClient): Router {
   router.post("/logout", async (req, res) => {
     const parsed = parseRefreshToken(req.cookies?.[REFRESH_COOKIE]);
     if (parsed) await revokeSession(prisma, parsed.sessionId);
-    res.clearCookie(REFRESH_COOKIE, cookieOptions());
+    res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
     res.status(204).end();
   });
 
@@ -153,20 +119,9 @@ export function authRouter(env: Env, prisma: PrismaClient): Router {
     res.json({ user: publicUser(user) });
   });
 
+  router.use(twoFactorRoutes(deps));
+  router.use(resetRoutes(deps));
+  router.use(sessionRoutes(deps));
+
   return router;
-}
-
-function clientOf(req: Request): ClientInfo {
-  return { ip: req.ip, userAgent: req.get("user-agent") };
-}
-
-// The only user fields that ever leave the API.
-export function publicUser(user: User) {
-  return {
-    id: user.id,
-    email: user.email,
-    role: user.role,
-    twoFactorEnabled: user.totpEnabledAt !== null,
-    createdAt: user.createdAt,
-  };
 }

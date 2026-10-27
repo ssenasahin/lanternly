@@ -9,6 +9,15 @@ const schema = z.object({
   WEB_ORIGIN: z.url(),
   // Signs access tokens. Anyone holding it can mint a token for any user.
   JWT_SECRET: z.string().min(32, "must be at least 32 characters"),
+  // Encrypts TOTP secrets and channel tokens at rest. Losing it makes them unreadable.
+  ENCRYPTION_KEY: z
+    .string()
+    .refine((v) => Buffer.from(v, "base64").length === 32, "must be 32 bytes, base64-encoded"),
+  SMTP_HOST: z.string().default("localhost"),
+  SMTP_PORT: z.coerce.number().int().positive().default(1025),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  MAIL_FROM: z.string().default("Lanternly <alerts@lanternly.local>"),
   // How many reverse proxies sit in front of the API; needed to read the client's real IP.
   TRUST_PROXY: z.coerce.number().int().min(0).default(0),
   AUTH_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(10),

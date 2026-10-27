@@ -6,7 +6,12 @@ import { testEnv } from "./test/helpers.js";
 
 // The health check is tested with a fake database probe, so it needs no Postgres.
 function appWith(checkDatabase: () => Promise<void>) {
-  return createApp({ env: testEnv, prisma: {} as PrismaClient, checkDatabase });
+  return createApp({
+    env: testEnv,
+    prisma: {} as PrismaClient,
+    mailer: { send: async () => {} },
+    checkDatabase,
+  });
 }
 
 describe("GET /api/health", () => {

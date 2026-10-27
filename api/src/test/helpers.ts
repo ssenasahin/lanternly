@@ -1,7 +1,9 @@
 import { PrismaClient } from "@lanternly/db";
-import type { Response } from "supertest";
+import { generate } from "otplib";
+import request, { type Response } from "supertest";
 import { createApp } from "../app.js";
 import type { Env } from "../env.js";
+import type { Mail, Mailer } from "../mailer.js";
 import { TEST_DATABASE_URL } from "./database.js";
 
 export const testEnv: Env = {
@@ -10,19 +12,32 @@ export const testEnv: Env = {
   DATABASE_URL: TEST_DATABASE_URL,
   WEB_ORIGIN: "http://localhost:5173",
   JWT_SECRET: "test-secret-that-is-at-least-thirty-two-characters",
+  ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
+  SMTP_HOST: "localhost",
+  SMTP_PORT: 1025,
+  MAIL_FROM: "Lanternly <test@lanternly.local>",
   TRUST_PROXY: 0,
   AUTH_RATE_LIMIT_PER_MINUTE: 1000,
 };
 
 export const prisma = new PrismaClient({ datasourceUrl: TEST_DATABASE_URL });
 
+// Collects outgoing email instead of sending it.
+export const outbox: Mail[] = [];
+const memoryMailer: Mailer = {
+  async send(mail) {
+    outbox.push(mail);
+  },
+};
+
 // Every table hangs off users, so truncating it with CASCADE empties them all.
 export async function resetDatabase(): Promise<void> {
+  outbox.length = 0;
   await prisma.$executeRawUnsafe("TRUNCATE TABLE users CASCADE");
 }
 
 export function makeApp(env: Partial<Env> = {}) {
-  return createApp({ env: { ...testEnv, ...env }, prisma });
+  return createApp({ env: { ...testEnv, ...env }, prisma, mailer: memoryMailer });
 }
 
 // Pulls the refresh cookie out of a response, as a browser would store it.
@@ -36,3 +51,32 @@ export function cookiePair(setCookie: string): string {
 }
 
 export const GOOD_PASSWORD = "amber-lantern-over-the-harbour";
+
+export async function signUp(app: ReturnType<typeof makeApp>, email = "ada@example.com") {
+  const res = await request(app)
+    .post("/api/auth/register")
+    .send({ email, password: GOOD_PASSWORD });
+  return { accessToken: res.body.accessToken as string, cookie: cookiePair(refreshCookie(res)!) };
+}
+
+// Turns two-factor on for a signed-in user and returns what the app would hold.
+export async function enableTwoFactor(app: ReturnType<typeof makeApp>, accessToken: string) {
+  const setup = await request(app)
+    .post("/api/auth/2fa/setup")
+    .set("Authorization", `Bearer ${accessToken}`);
+  const secret = setup.body.secret as string;
+  const verified = await request(app)
+    .post("/api/auth/2fa/verify")
+    .set("Authorization", `Bearer ${accessToken}`)
+    .send({ code: await generate({ secret }) });
+  return {
+    secret,
+    backupCodes: verified.body.backupCodes as string[],
+    accessToken: verified.body.accessToken as string,
+  };
+}
+
+// A valid code for the next 30-second step, which the last-used-step rule accepts.
+export function nextCode(secret: string) {
+  return generate({ secret, epoch: Math.floor(Date.now() / 1000) + 30 });
+}
