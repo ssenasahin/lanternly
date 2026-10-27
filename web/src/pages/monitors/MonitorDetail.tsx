@@ -1,13 +1,13 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Activity, ArrowLeft, ExternalLink, Pause, Pencil, Play, Trash2 } from "lucide-react";
-import { useState, type ReactNode } from "react";
-import { Link, useNavigate, useParams } from "react-router";
-import { ApiError, api } from "../../api/client";
-import { badgeStatus, monitorKeys, useChecks, useMonitor, type Monitor } from "../../api/monitors";
+import { Activity, ArrowLeft, ExternalLink } from "lucide-react";
+import { Link, useParams } from "react-router";
+import { ApiError } from "../../api/client";
+import { badgeStatus, useChecks, useMonitor, type Monitor } from "../../api/monitors";
 import { Alert, EmptyState, SkeletonRows, StatusBadge } from "../../components";
-import { formatSeconds, formatTime, timeAgo } from "../../lib/format";
+import { describeSchedule, formatSeconds, formatTime, timeAgo } from "../../lib/format";
+import { HeartbeatBody } from "../heartbeats/HeartbeatBody";
 import { NotFoundPage } from "../NotFound";
 import { MonitorIncidents, MonitorStats } from "./MonitorStats";
+import { Actions, Fact } from "./parts";
 import "../pages.css";
 import "./monitors.css";
 
@@ -36,6 +36,7 @@ export function MonitorDetailPage() {
   }
 
   const { monitor, openIncident } = detail.data;
+  const isHeartbeat = monitor.type === "HEARTBEAT";
   return (
     <>
       <header className="page-header">
@@ -61,107 +62,60 @@ export function MonitorDetailPage() {
           </Alert>
         )}
         {!monitor.isActive && (
-          <Alert tone="info">Paused. No checks run and no alerts go out until you resume it.</Alert>
+          <Alert tone="info">
+            {isHeartbeat
+              ? "Paused. Pings are still logged, but a missed or failed run raises no alert until you resume it."
+              : "Paused. No checks run and no alerts go out until you resume it."}
+          </Alert>
+        )}
+        {isHeartbeat && monitor.isActive && monitor.status === "PENDING" && (
+          <Alert tone="info">
+            Waiting for the first ping. Lanternly starts watching the schedule once it arrives.
+          </Alert>
         )}
 
-        <MonitorStats monitorId={monitor.id} />
-        <MonitorIncidents monitorId={monitor.id} />
-
-        <dl className="card card-body facts">
-          <Fact label="Check every">{formatSeconds(monitor.intervalSec)}</Fact>
-          <Fact label="Timeout">{formatSeconds(monitor.timeoutMs / 1000)}</Fact>
-          <Fact label="Retries">{monitor.retries === 0 ? "None" : monitor.retries}</Fact>
-          <Fact label="Last checked">
-            {monitor.lastCheckedAt ? timeAgo(monitor.lastCheckedAt) : "Not yet"}
-          </Fact>
-        </dl>
-
-        <RecentChecks id={monitor.id} />
+        {isHeartbeat ? <HeartbeatBody id={monitor.id} /> : <CheckedBody monitor={monitor} />}
       </div>
     </>
   );
 }
 
+// A monitor Lanternly checks itself: what it measured, and how it's set up.
+function CheckedBody({ monitor }: { monitor: Monitor }) {
+  return (
+    <>
+      <MonitorStats monitorId={monitor.id} />
+      <MonitorIncidents monitorId={monitor.id} />
+
+      <dl className="card card-body facts">
+        <Fact label="Check every">{formatSeconds(monitor.intervalSec)}</Fact>
+        <Fact label="Timeout">{formatSeconds(monitor.timeoutMs / 1000)}</Fact>
+        <Fact label="Retries">{monitor.retries === 0 ? "None" : monitor.retries}</Fact>
+        <Fact label="Last checked">
+          {monitor.lastCheckedAt ? timeAgo(monitor.lastCheckedAt) : "Not yet"}
+        </Fact>
+      </dl>
+
+      <RecentChecks id={monitor.id} />
+    </>
+  );
+}
+
 function Target({ monitor }: { monitor: Monitor }) {
+  if (monitor.heartbeat) {
+    const { timezone, cron } = monitor.heartbeat;
+    return (
+      <p className="detail-target mono">
+        heartbeat, {describeSchedule(monitor.heartbeat)}
+        {cron && timezone !== "UTC" ? ` (${timezone})` : ""}
+      </p>
+    );
+  }
   if (monitor.type !== "HTTP") return <p className="detail-target mono">ping {monitor.target}</p>;
   return (
     <a className="detail-target mono" href={monitor.target} target="_blank" rel="noreferrer">
       {monitor.target} <ExternalLink size={12} aria-hidden />
     </a>
-  );
-}
-
-function Fact({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div>
-      <dt>{label}</dt>
-      <dd>{children}</dd>
-    </div>
-  );
-}
-
-function Actions({ monitor }: { monitor: Monitor }) {
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const [confirming, setConfirming] = useState(false);
-  const refresh = () => queryClient.invalidateQueries({ queryKey: monitorKeys.all });
-
-  const toggle = useMutation({
-    mutationFn: () =>
-      api(`/monitors/${monitor.id}/${monitor.isActive ? "pause" : "resume"}`, { method: "POST" }),
-    onSuccess: refresh,
-  });
-
-  const remove = useMutation({
-    mutationFn: () => api(`/monitors/${monitor.id}`, { method: "DELETE" }),
-    onSuccess: async () => {
-      queryClient.removeQueries({ queryKey: monitorKeys.detail(monitor.id) });
-      await refresh();
-      navigate("/", { replace: true });
-    },
-  });
-
-  // Deleting throws away the monitor's whole history, so it takes a second click.
-  if (confirming) {
-    return (
-      <div className="row confirm-delete" role="group" aria-label="Confirm delete">
-        <span>Delete it and all its history?</span>
-        <button className="btn btn-ghost" onClick={() => setConfirming(false)}>
-          Keep it
-        </button>
-        <button
-          className="btn btn-danger"
-          onClick={() => remove.mutate()}
-          disabled={remove.isPending}
-          autoFocus
-        >
-          <Trash2 size={15} aria-hidden /> {remove.isPending ? "Deleting…" : "Delete"}
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="row">
-      {(toggle.error || remove.error) && (
-        <span className="field-error">{(toggle.error ?? remove.error)?.message}</span>
-      )}
-      <button className="btn" onClick={() => toggle.mutate()} disabled={toggle.isPending}>
-        {monitor.isActive ? <Pause size={15} aria-hidden /> : <Play size={15} aria-hidden />}
-        {monitor.isActive ? "Pause" : "Resume"}
-      </button>
-      <Link to={`/monitors/${monitor.id}/edit`} className="btn">
-        <Pencil size={15} aria-hidden /> Edit
-      </Link>
-      <button
-        className="btn btn-ghost btn-icon"
-        onClick={() => setConfirming(true)}
-        aria-label="Delete monitor"
-        title="Delete monitor"
-      >
-        <Trash2 size={15} />
-      </button>
-    </div>
   );
 }
 

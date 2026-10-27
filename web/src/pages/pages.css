@@ -17,6 +17,12 @@
   gap: var(--space-5);
 }
 
+/* Grid items default to their content's width; a long line of code would push the
+   card past the screen instead of scrolling inside it. */
+.stack > * {
+  min-width: 0;
+}
+
 .section-title {
   margin-bottom: var(--space-4);
   font-size: var(--text-xs);
