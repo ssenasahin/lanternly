@@ -24,6 +24,7 @@ export {
   type ApiAttempt,
   type ApiRequestSpec,
 } from "./checks/api.js";
+export { formatHostPort, HostPortError, parseHostPort } from "./checks/host-port.js";
 export { checkHttp } from "./checks/http.js";
 export {
   describeFailure,
