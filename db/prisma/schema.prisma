@@ -51,6 +51,8 @@ model User {
   totpSecret    String?   @map("totp_secret")
   // Set once the user proves they can produce a code; until then the secret is pending.
   totpEnabledAt DateTime? @map("totp_enabled_at")
+  // The time step of the last accepted code; older or equal steps are refused as replays.
+  totpLastStep  Int?      @map("totp_last_step")
   failedLogins  Int       @default(0) @map("failed_logins")
   lockedUntil   DateTime? @map("locked_until")
   createdAt     DateTime  @default(now()) @map("created_at")
