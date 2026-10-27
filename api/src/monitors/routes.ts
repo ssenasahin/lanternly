@@ -53,6 +53,11 @@ const monitorFields = {
   lastCheckedAt: true,
   createdAt: true,
   updatedAt: true,
+  // A heartbeat's schedule, so lists can say what it expects. Never its token: the
+  // ping URL is only shown on /api/heartbeats/:id.
+  heartbeat: {
+    select: { periodSec: true, cron: true, timezone: true, graceSec: true, lastPingAt: true },
+  },
 } satisfies Prisma.MonitorSelect;
 
 interface Timing {
@@ -205,8 +210,12 @@ export function monitorRouter({ prisma, scheduler, jwtSecret, resolveHost }: Mon
     const { id } = validate(idParams, req.params);
     const input = validate(updateSchema, req.body);
     const current = await findOwned(id, userId);
+    // A heartbeat has a schedule rather than a target and an interval.
+    if (current.type === "HEARTBEAT") {
+      throw new HttpError(400, "Edit a heartbeat at /api/heartbeats/:id");
+    }
 
-    const next = { ...current, ...input };
+    const next = { ...current, ...input, type: input.type ?? (current.type as "HTTP" | "PING") };
     assertFitsInterval(next);
 
     const data: Prisma.MonitorUpdateInput = { ...input };

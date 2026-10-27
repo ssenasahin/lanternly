@@ -15,8 +15,12 @@ export async function processCheck(monitorId: string, { prisma, notify, resolve 
   const monitor = await prisma.monitor.findUnique({ where: { id: monitorId } });
   // Deleted or paused after this job was queued.
   if (!monitor || !monitor.isActive) return;
+  // Heartbeats aren't checked; their pings and the lateness search drive them. A
+  // stray job left from before a monitor's type changed has nothing to do.
+  const { type } = monitor;
+  if (type === "HEARTBEAT") return;
 
-  const result = await runCheck(monitor, resolve);
+  const result = await runCheck({ ...monitor, type }, resolve);
   const alert = await recordCheck(prisma, monitor.id, monitor.status, result);
   if (alert) await notify(alert);
 }

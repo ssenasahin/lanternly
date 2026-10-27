@@ -18,6 +18,14 @@ enum Role {
 enum MonitorType {
   HTTP
   PING
+  // Checked the other way round: the job pings Lanternly, and silence is the alarm.
+  HEARTBEAT
+}
+
+enum PingKind {
+  SUCCESS
+  START
+  FAIL
 }
 
 // PENDING until the first check finishes, so a new monitor never shows as down.
@@ -132,6 +140,7 @@ model Monitor {
   checks    CheckResult[]
   rollups   CheckRollup[]
   incidents Incident[]
+  heartbeat Heartbeat?
 
   @@index([ownerId])
   @@map("monitors")
@@ -172,6 +181,49 @@ model CheckRollup {
 
   @@id([monitorId, hour])
   @@map("check_rollups")
+}
+
+// The schedule of a HEARTBEAT monitor. Its results, state and incidents live on the
+// monitor like any other's; this row only says when the next ping is due.
+model Heartbeat {
+  monitorId   String    @id @map("monitor_id") @db.Uuid
+  // The secret in the ping URL. Random, so URLs can't be guessed from one another.
+  token       String    @unique
+  // Either a fixed period or a cron expression, never both.
+  periodSec   Int?      @map("period_sec")
+  cron        String?
+  // The cron expression is read in this zone, so "0 3 * * *" means 03:00 there.
+  timezone    String    @default("UTC")
+  // How late a ping may be before the job counts as down.
+  graceSec    Int       @map("grace_sec")
+  // The last success or failure ping; start pings don't count.
+  lastPingAt  DateTime? @map("last_ping_at")
+  // Set by a start ping and cleared by the ping that ends the run, to time it.
+  lastStartAt DateTime? @map("last_start_at")
+
+  monitor Monitor         @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+  pings   HeartbeatPing[]
+
+  @@map("heartbeats")
+}
+
+// Every ping received, with enough of the request to tell runs apart when debugging.
+model HeartbeatPing {
+  id         BigInt   @id @default(autoincrement())
+  monitorId  String   @map("monitor_id") @db.Uuid
+  kind       PingKind
+  receivedAt DateTime @default(now()) @map("received_at")
+  // How long the run took, when a start ping came first.
+  durationMs Int?     @map("duration_ms")
+  ip         String?
+  userAgent  String?  @map("user_agent")
+  // The first 10 KB of the request body: often the job's output or error.
+  body       String?
+
+  heartbeat Heartbeat @relation(fields: [monitorId], references: [monitorId], onDelete: Cascade)
+
+  @@index([monitorId, receivedAt])
+  @@map("heartbeat_pings")
 }
 
 model Incident {
