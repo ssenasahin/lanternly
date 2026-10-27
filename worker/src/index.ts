@@ -4,6 +4,7 @@ import {
   HEARTBEATS_QUEUE,
   NOTIFICATIONS_QUEUE,
   notificationJobId,
+  parseEncryptionKey,
   prisma,
   redisConnection,
   smtpMailer,
@@ -24,6 +25,7 @@ const RECONCILE_EVERY_MS = 5 * 60 * 1000;
 const MAINTENANCE_QUEUE = "maintenance";
 
 const env = loadEnv();
+const encryptionKey = parseEncryptionKey(env.ENCRYPTION_KEY);
 const connection = redisConnection(env.REDIS_URL);
 connection.on("error", (err) => console.error("redis:", err.message));
 const mailer = smtpMailer({
@@ -63,7 +65,7 @@ await heartbeats.upsertJobScheduler(
 
 const checkWorker = new Worker<CheckJob>(
   CHECKS_QUEUE,
-  (job) => processCheck(job.data.monitorId, { prisma, notify }),
+  (job) => processCheck(job.data.monitorId, { prisma, notify, encryptionKey }),
   { connection, concurrency: env.CHECK_CONCURRENCY },
 );
 

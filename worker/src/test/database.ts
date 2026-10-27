@@ -11,7 +11,7 @@ export async function resetDatabase() {
 }
 
 // A user with one monitor, ready to be checked.
-export async function makeMonitor(data: { type?: "HTTP" | "PING"; target: string }) {
+export async function makeMonitor(data: { type?: "HTTP" | "API" | "PING"; target: string }) {
   const owner = await prisma.user.create({
     data: { email: "ada@example.com", passwordHash: "not-a-real-hash" },
   });

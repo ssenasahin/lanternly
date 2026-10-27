@@ -62,7 +62,7 @@ export function queuePings(queue: Queue<PingJob>): PingQueue {
 
 export interface ScheduledMonitor {
   id: string;
-  type: "HTTP" | "PING" | "HEARTBEAT";
+  type: "HTTP" | "API" | "PING" | "HEARTBEAT";
   intervalSec: number;
   isActive: boolean;
 }

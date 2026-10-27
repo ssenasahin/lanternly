@@ -17,9 +17,36 @@ enum Role {
 
 enum MonitorType {
   HTTP
+  // A request of the owner's design, its answer checked against a status list and rules.
+  API
   PING
   // Checked the other way round: the job pings Lanternly, and silence is the alarm.
   HEARTBEAT
+}
+
+enum HttpMethod {
+  GET
+  POST
+  PUT
+  PATCH
+  DELETE
+  HEAD
+}
+
+enum BodyType {
+  NONE
+  JSON
+  FORM
+}
+
+enum AssertionOperator {
+  EQUALS
+  NOT_EQUALS
+  CONTAINS
+  GREATER_THAN
+  LESS_THAN
+  EXISTS
+  NOT_EXISTS
 }
 
 enum PingKind {
@@ -130,17 +157,21 @@ model Monitor {
   intervalSec   Int           @default(60) @map("interval_sec")
   timeoutMs     Int           @default(10000) @map("timeout_ms")
   retries       Int           @default(1)
+  // Answers slower than this count as degraded. Null: any answer in time is up.
+  slowAfterMs   Int?          @map("slow_after_ms")
   isActive      Boolean       @default(true) @map("is_active")
   status        MonitorStatus @default(PENDING)
   lastCheckedAt DateTime?     @map("last_checked_at")
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
-  owner     User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  checks    CheckResult[]
-  rollups   CheckRollup[]
-  incidents Incident[]
-  heartbeat Heartbeat?
+  owner      User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  checks     CheckResult[]
+  rollups    CheckRollup[]
+  incidents  Incident[]
+  heartbeat  Heartbeat?
+  apiRequest ApiRequest?
+  assertions Assertion[]
 
   @@index([ownerId])
   @@map("monitors")
@@ -153,6 +184,9 @@ model CheckResult {
   responseMs Int?        @map("response_ms")
   statusCode Int?        @map("status_code")
   error      String?
+  // Every rule's verdict ({ path, operator, expected, received, passed }), kept when
+  // one failed, so the failure can be shown as expected against received.
+  rules      Json?
   checkedAt  DateTime    @default(now()) @map("checked_at")
 
   monitor Monitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
@@ -224,6 +258,40 @@ model HeartbeatPing {
 
   @@index([monitorId, receivedAt])
   @@map("heartbeat_pings")
+}
+
+// How an API monitor calls its endpoint. The URL is the monitor's target.
+model ApiRequest {
+  monitorId      String     @id @map("monitor_id") @db.Uuid
+  method         HttpMethod @default(GET)
+  // AES-GCM ciphertext of the headers as JSON, [{ name, value, secret }]: they often
+  // carry API keys. Secret values are never sent back to the browser.
+  headers        String?
+  bodyType       BodyType   @default(NONE) @map("body_type")
+  body           String?
+  // Like "200-299" or "200, 304".
+  expectedStatus String     @default("200-299") @map("expected_status")
+
+  monitor Monitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  @@map("api_requests")
+}
+
+// One rule an API monitor's JSON answer must pass, like data.items[0].price > 0.
+model Assertion {
+  id        String            @id @default(uuid()) @db.Uuid
+  monitorId String            @map("monitor_id") @db.Uuid
+  // Rules are checked, and shown, in the order they were written.
+  position  Int
+  path      String
+  operator  AssertionOperator
+  // Unused by EXISTS and NOT_EXISTS.
+  expected  String?           @map("expected_value")
+
+  monitor Monitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  @@index([monitorId, position])
+  @@map("assertions")
 }
 
 model Incident {

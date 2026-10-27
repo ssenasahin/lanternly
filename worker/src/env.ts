@@ -11,6 +11,10 @@ const schema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   MAIL_FROM: z.string().default("Lanternly <alerts@lanternly.local>"),
+  // The API's key, to read the headers it stored encrypted for API monitors.
+  ENCRYPTION_KEY: z
+    .string()
+    .refine((v) => Buffer.from(v, "base64").length === 32, "must be 32 bytes, base64-encoded"),
   // Checks mostly wait on the network, so many can run at once.
   CHECK_CONCURRENCY: z.coerce.number().int().positive().default(20),
 });

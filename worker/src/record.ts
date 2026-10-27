@@ -1,5 +1,4 @@
-import { Prisma, type NotificationJob, type PrismaClient } from "@lanternly/db";
-import type { Attempt } from "./checks/types.js";
+import { Prisma, type Attempt, type NotificationJob, type PrismaClient } from "@lanternly/db";
 import { nextState, type MonitorStatus } from "./state.js";
 
 // Prisma's defaults (wait 2 s for a connection, run for 5 s) are tight when many checks
@@ -40,7 +39,15 @@ export async function recordCheck(
         data: { status: transition.status, lastCheckedAt: now },
       });
       if (stillValid && !(await stillValid(tx))) throw new Superseded();
-      const check = await tx.checkResult.create({ data: { monitorId, ...result, checkedAt: now } });
+      const { rules, ...rest } = result;
+      const check = await tx.checkResult.create({
+        data: {
+          monitorId,
+          ...rest,
+          rules: rules as Prisma.InputJsonArray | undefined,
+          checkedAt: now,
+        },
+      });
       if (count === 0) {
         await tx.monitor.updateMany({ where: { id: monitorId }, data: { lastCheckedAt: now } });
         return null;
