@@ -130,6 +130,7 @@ model Monitor {
 
   owner     User          @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   checks    CheckResult[]
+  rollups   CheckRollup[]
   incidents Incident[]
 
   @@index([ownerId])
@@ -150,6 +151,27 @@ model CheckResult {
   // Every chart and uptime figure reads one monitor's results over a time range.
   @@index([monitorId, checkedAt])
   @@map("check_results")
+}
+
+// One row per monitor per hour, for results older than seven days. The nightly job
+// writes these and deletes the raw rows they summarise, so check_results stays small
+// while 30-day uptime and response times remain answerable.
+model CheckRollup {
+  monitorId     String   @map("monitor_id") @db.Uuid
+  // The start of the hour, in UTC.
+  hour          DateTime
+  checks        Int
+  // Checks that found the monitor down. Degraded counts as up: it answered.
+  failures      Int
+  // Over the checks that measured a response time (failed ones often can't).
+  responseCount Int      @map("response_count")
+  responseAvgMs Float?   @map("response_avg_ms")
+  responseP95Ms Float?   @map("response_p95_ms")
+
+  monitor Monitor @relation(fields: [monitorId], references: [id], onDelete: Cascade)
+
+  @@id([monitorId, hour])
+  @@map("check_rollups")
 }
 
 model Incident {
