@@ -55,7 +55,12 @@ export async function recordCheck(
 
       if (transition.incident === "open") {
         const incident = await tx.incident.create({
-          data: { monitorId, startedAt: now, cause: result.error },
+          data: {
+            monitorId,
+            startedAt: now,
+            cause: result.error,
+            events: { create: { type: "OPENED", at: now, detail: result.error } },
+          },
         });
         return { kind: "down", incidentId: incident.id };
       }
@@ -66,7 +71,10 @@ export async function recordCheck(
           orderBy: { startedAt: "desc" },
         });
         if (!open) return null;
-        await tx.incident.update({ where: { id: open.id }, data: { resolvedAt: now } });
+        await tx.incident.update({
+          where: { id: open.id },
+          data: { resolvedAt: now, events: { create: { type: "RESOLVED", at: now } } },
+        });
         return { kind: "up", incidentId: open.id };
       }
 
