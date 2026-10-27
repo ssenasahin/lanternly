@@ -44,3 +44,15 @@ export async function rollUpOldChecks(prisma: PrismaClient, now = new Date()) {
       response_p95_ms = greatest(check_rollups.response_p95_ms, EXCLUDED.response_p95_ms)`;
   return { cutoff, hours: moved };
 }
+
+// Pings are kept for a month: long enough to debug a run and to average the last 20
+// runs of a daily job, short enough that a job pinging every minute stays small.
+export const PING_RETENTION_DAYS = 30;
+
+export async function pruneOldPings(prisma: PrismaClient, now = new Date()) {
+  const cutoff = new Date(now.getTime() - PING_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const { count } = await prisma.heartbeatPing.deleteMany({
+    where: { receivedAt: { lt: cutoff } },
+  });
+  return count;
+}

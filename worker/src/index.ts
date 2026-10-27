@@ -1,18 +1,22 @@
 // Runs checks, opens and closes incidents, and sends notifications.
 import {
   CHECKS_QUEUE,
+  HEARTBEATS_QUEUE,
   NOTIFICATIONS_QUEUE,
+  notificationJobId,
   prisma,
   redisConnection,
   smtpMailer,
   type CheckJob,
   type NotificationJob,
+  type PingJob,
 } from "@lanternly/db";
 import { Queue, Worker } from "bullmq";
 import { loadEnv } from "./env.js";
-import { sendIncidentEmail } from "./notify.js";
+import { markLateHeartbeats, processPing } from "./heartbeats.js";
+import { sendNotification } from "./notify.js";
 import { processCheck } from "./process-check.js";
-import { rollUpOldChecks } from "./rollup.js";
+import { pruneOldPings, rollUpOldChecks } from "./rollup.js";
 import { reconcileSchedules } from "./schedule.js";
 
 const RECONCILE_EVERY_MS = 5 * 60 * 1000;
@@ -33,6 +37,16 @@ const mailer = smtpMailer({
 const checks = new Queue<CheckJob>(CHECKS_QUEUE, { connection });
 const notifications = new Queue<NotificationJob>(NOTIFICATIONS_QUEUE, { connection });
 const maintenance = new Queue(MAINTENANCE_QUEUE, { connection });
+const heartbeats = new Queue<PingJob>(HEARTBEATS_QUEUE, { connection });
+
+const notify = (alert: NotificationJob) =>
+  notifications.add(alert.kind, alert, {
+    jobId: notificationJobId(alert),
+    attempts: 5,
+    backoff: { type: "exponential", delay: 10_000 },
+    removeOnComplete: true,
+    removeOnFail: { age: 7 * 24 * 60 * 60 },
+  });
 
 // Every night at 03:00, server time, when traffic is lowest.
 await maintenance.upsertJobScheduler(
@@ -40,28 +54,37 @@ await maintenance.upsertJobScheduler(
   { pattern: "0 3 * * *" },
   { name: "roll-up-checks", opts: { removeOnComplete: true, removeOnFail: { count: 30 } } },
 );
+// Silent heartbeats are looked for every minute, so an alert is at most a minute late.
+await heartbeats.upsertJobScheduler(
+  "find-late-heartbeats",
+  { every: 60_000 },
+  { name: "find-late", opts: { removeOnComplete: true, removeOnFail: { count: 30 } } },
+);
 
 const checkWorker = new Worker<CheckJob>(
   CHECKS_QUEUE,
-  (job) =>
-    processCheck(job.data.monitorId, {
-      prisma,
-      notify: (alert) =>
-        notifications.add(alert.kind, alert, {
-          // One email per incident and direction, even if a check job is retried.
-          jobId: `${alert.kind}-${alert.incidentId}`,
-          attempts: 5,
-          backoff: { type: "exponential", delay: 10_000 },
-          removeOnComplete: true,
-          removeOnFail: { age: 7 * 24 * 60 * 60 },
-        }),
-    }),
+  (job) => processCheck(job.data.monitorId, { prisma, notify }),
   { connection, concurrency: env.CHECK_CONCURRENCY },
+);
+
+// One job at a time, so pings apply in the order they arrived: a start and a success
+// sent a second apart must not be read the other way round. Each is a few queries.
+const heartbeatWorker = new Worker<PingJob>(
+  HEARTBEATS_QUEUE,
+  async (job) => {
+    if (job.name === "ping") {
+      await processPing(job.data.pingId, { prisma, notify });
+      return;
+    }
+    const late = await markLateHeartbeats({ prisma, notify });
+    if (late > 0) console.log(`${late} heartbeats went quiet`);
+  },
+  { connection },
 );
 
 const notificationWorker = new Worker<NotificationJob>(
   NOTIFICATIONS_QUEUE,
-  (job) => sendIncidentEmail(job.data, { prisma, mailer, webOrigin: env.WEB_ORIGIN }),
+  (job) => sendNotification(job.data, { prisma, mailer, webOrigin: env.WEB_ORIGIN }),
   { connection },
 );
 
@@ -70,11 +93,13 @@ const maintenanceWorker = new Worker(
   async () => {
     const { cutoff, hours } = await rollUpOldChecks(prisma);
     console.log(`rolled up ${hours} monitor-hours of results older than ${cutoff.toISOString()}`);
+    const pings = await pruneOldPings(prisma);
+    if (pings > 0) console.log(`deleted ${pings} heartbeat pings older than a month`);
   },
   { connection },
 );
 
-for (const worker of [checkWorker, notificationWorker, maintenanceWorker]) {
+for (const worker of [checkWorker, notificationWorker, maintenanceWorker, heartbeatWorker]) {
   worker.on("failed", (job, err) => {
     console.error(`${worker.name} job ${job?.id ?? "?"} failed:`, err.message);
   });
@@ -96,11 +121,17 @@ console.log(`lanternly worker running ${env.CHECK_CONCURRENCY} checks at a time`
 // Let running checks finish, then close Redis and database connections.
 async function shutdown() {
   clearInterval(timer);
-  await Promise.all([checkWorker.close(), notificationWorker.close(), maintenanceWorker.close()]);
+  await Promise.all([
+    checkWorker.close(),
+    notificationWorker.close(),
+    maintenanceWorker.close(),
+    heartbeatWorker.close(),
+  ]);
   await Promise.all([
     checks.close(),
     notifications.close(),
     maintenance.close(),
+    heartbeats.close(),
     prisma.$disconnect(),
   ]);
   await connection.quit();

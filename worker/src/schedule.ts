@@ -1,14 +1,15 @@
 import { queueScheduler, schedulerKey, type CheckJob, type PrismaClient } from "@lanternly/db";
 import type { Queue } from "bullmq";
 
-// Makes Redis match the database: every active monitor has a schedule at its
+// Makes Redis match the database: every active, checked monitor has a schedule at its
 // interval, and nothing else does. The API keeps them in step as monitors change;
 // this repairs anything it missed, and rebuilds everything if Redis lost its data.
 export async function reconcileSchedules(prisma: PrismaClient, queue: Queue<CheckJob>) {
   const scheduler = queueScheduler(queue);
   const active = await prisma.monitor.findMany({
-    where: { isActive: true },
-    select: { id: true, intervalSec: true, isActive: true },
+    // Heartbeats have no check schedule; their pings drive them.
+    where: { isActive: true, type: { not: "HEARTBEAT" } },
+    select: { id: true, type: true, intervalSec: true, isActive: true },
   });
   const existing = new Map(
     (await queue.getJobSchedulers()).map((s) => [s.key, s.every ?? null] as const),

@@ -6,16 +6,27 @@ import { nextState, type MonitorStatus } from "./state.js";
 // finish together and the pool has to open new connections.
 const TRANSACTION_LIMITS = { maxWait: 10_000, timeout: 10_000 };
 
+export interface RecordOptions {
+  now?: Date;
+  // Runs inside the transaction once the monitor's row is locked. Returning false
+  // drops the result entirely: what it was based on changed while it was decided.
+  stillValid?: (tx: Prisma.TransactionClient) => Promise<boolean>;
+}
+
+// Thrown to roll the transaction back when stillValid says no.
+class Superseded extends Error {}
+
 // Stores a check's result and applies the state machine, all in one transaction:
 // the result, the monitor's new state and the incident change land together or not
-// at all. Returns the alert to send, if the check opened or closed an incident.
+// at all. Returns the alert to send: an incident opened or closed, or the monitor
+// turned slow.
 export async function recordCheck(
   prisma: PrismaClient,
   monitorId: string,
   // The state the monitor was in when this check started.
   from: MonitorStatus,
   result: Attempt,
-  now = new Date(),
+  { now = new Date(), stillValid }: RecordOptions = {},
 ): Promise<NotificationJob | null> {
   try {
     return await prisma.$transaction(async (tx) => {
@@ -28,7 +39,8 @@ export async function recordCheck(
         where: { id: monitorId, status: from },
         data: { status: transition.status, lastCheckedAt: now },
       });
-      await tx.checkResult.create({ data: { monitorId, ...result, checkedAt: now } });
+      if (stillValid && !(await stillValid(tx))) throw new Superseded();
+      const check = await tx.checkResult.create({ data: { monitorId, ...result, checkedAt: now } });
       if (count === 0) {
         await tx.monitor.updateMany({ where: { id: monitorId }, data: { lastCheckedAt: now } });
         return null;
@@ -51,9 +63,11 @@ export async function recordCheck(
         return { kind: "up", incidentId: open.id };
       }
 
+      if (transition.warn) return { kind: "degraded", checkId: check.id.toString() };
       return null;
     }, TRANSACTION_LIMITS);
   } catch (err) {
+    if (err instanceof Superseded) return null;
     // The monitor was deleted while its check was running; there's nothing to record.
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") return null;
     throw err;

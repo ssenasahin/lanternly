@@ -34,6 +34,8 @@ beforeEach(async () => {
   await resetDatabase();
 });
 
+const incidentOf = (job?: NotificationJob) => (job && "incidentId" in job ? job.incidentId : null);
+
 const deps = {
   prisma,
   notify: async (job: NotificationJob) => sent.push(job),
@@ -61,7 +63,7 @@ describe("processCheck", () => {
     expect(sent.map((j) => j.kind)).toEqual(["down", "up"]);
     const incidents = await prisma.incident.findMany();
     expect(incidents).toHaveLength(1);
-    expect(incidents[0]).toMatchObject({ cause: "HTTP 503", id: sent[0]!.incidentId });
+    expect(incidents[0]).toMatchObject({ cause: "HTTP 503", id: incidentOf(sent[0]) });
     expect(incidents[0]!.resolvedAt).not.toBeNull();
     expect(await prisma.monitor.findUniqueOrThrow({ where: { id: monitor.id } })).toMatchObject({
       status: "UP",

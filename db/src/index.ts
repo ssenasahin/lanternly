@@ -19,14 +19,28 @@ export {
   type ResolveHost,
 } from "./network.js";
 export {
+  cronProblem,
+  expectedBy,
+  isTimeZone,
+  lateAfter,
+  nextRuns,
+  type HeartbeatSchedule,
+} from "./heartbeats.js";
+export {
   CHECKS_QUEUE,
+  HEARTBEATS_QUEUE,
+  isScheduled,
   NOTIFICATIONS_QUEUE,
+  notificationJobId,
+  queuePings,
   queueScheduler,
   redisConnection,
   schedulerKey,
   type CheckJob,
   type MonitorScheduler,
   type NotificationJob,
+  type PingJob,
+  type PingQueue,
   type ScheduledMonitor,
 } from "./queues.js";
 
