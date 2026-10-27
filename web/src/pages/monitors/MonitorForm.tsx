@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Globe, Radio } from "lucide-react";
+import { ArrowLeft, Braces, Globe, Radio } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 import { Link, Navigate, useNavigate, useParams } from "react-router";
 import { ApiError, api } from "../../api/client";
@@ -8,12 +8,33 @@ import { monitorKeys, useMonitor, type Monitor } from "../../api/monitors";
 import { Alert, SelectField, SkeletonRows, TextField } from "../../components";
 import { formatSeconds } from "../../lib/format";
 import { NotFoundPage } from "../NotFound";
+import { RequestFields, ResponseFields } from "./ApiFields";
+import { METHODS } from "./operators";
 import { formField, monitorSchema, NEW_MONITOR, toForm, toInput, type MonitorForm } from "./schema";
+import { TestPanel } from "./TestPanel";
 import "../pages.css";
 import "./monitors.css";
 
 const INTERVALS = [30, 60, 120, 180, 300];
 const RETRIES = [0, 1, 2, 3, 4, 5];
+
+const TARGET = {
+  HTTP: {
+    label: "URL",
+    placeholder: "https://example.com/health",
+    hint: "Any answer from 200 to 399 counts as up. Redirects are followed.",
+  },
+  API: {
+    label: "URL",
+    placeholder: "https://api.example.com/v1/health",
+    hint: undefined,
+  },
+  PING: {
+    label: "Host",
+    placeholder: "example.com or 203.0.114.10",
+    hint: "Up when it answers an ICMP echo request.",
+  },
+};
 
 // /monitors/new and /monitors/:id/edit share one form.
 export function MonitorFormPage() {
@@ -43,17 +64,19 @@ function EditMonitor({ id }: { id: string }) {
 function MonitorEditor({ existing }: { existing?: Monitor }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const form = useForm<MonitorForm>({
+    resolver: zodResolver(monitorSchema),
+    defaultValues: existing ? toForm(existing) : NEW_MONITOR,
+  });
   const {
     register,
     handleSubmit,
     control,
     setError,
     formState: { errors, isSubmitting },
-  } = useForm<MonitorForm>({
-    resolver: zodResolver(monitorSchema),
-    defaultValues: existing ? toForm(existing) : NEW_MONITOR,
-  });
+  } = form;
   const type = useWatch({ control, name: "type" });
+  const target = TARGET[type];
 
   const save = useMutation({
     mutationFn: (form: MonitorForm) =>
@@ -113,10 +136,14 @@ function MonitorEditor({ existing }: { existing?: Monitor }) {
 
           <fieldset className="field">
             <legend className="field-label">What to check</legend>
-            <div className="segmented" role="radiogroup">
+            <div className="segmented segmented-wrap" role="radiogroup">
               <label>
                 <input type="radio" value="HTTP" {...register("type")} />
-                <Globe size={15} aria-hidden /> Website or API
+                <Globe size={15} aria-hidden /> Website
+              </label>
+              <label>
+                <input type="radio" value="API" {...register("type")} />
+                <Braces size={15} aria-hidden /> API with rules
               </label>
               <label>
                 <input type="radio" value="PING" {...register("type")} />
@@ -125,22 +152,27 @@ function MonitorEditor({ existing }: { existing?: Monitor }) {
             </div>
           </fieldset>
 
-          <TextField
-            label={type === "HTTP" ? "URL" : "Host"}
-            placeholder={
-              type === "HTTP" ? "https://example.com/health" : "example.com or 203.0.114.10"
-            }
-            autoComplete="off"
-            spellCheck={false}
-            mono
-            hint={
-              type === "HTTP"
-                ? "Any answer from 200 to 399 counts as up. Redirects are followed."
-                : "Up when it answers an ICMP echo request."
-            }
-            error={errors.target?.message}
-            {...register("target")}
-          />
+          <div className={type === "API" ? "request-line" : undefined}>
+            {type === "API" && (
+              <SelectField label="Method" {...register("method")}>
+                {METHODS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </SelectField>
+            )}
+            <TextField
+              label={target.label}
+              placeholder={target.placeholder}
+              autoComplete="off"
+              spellCheck={false}
+              mono
+              hint={target.hint}
+              error={errors.target?.message}
+              {...register("target")}
+            />
+          </div>
 
           <TextField
             label="Name"
@@ -151,9 +183,23 @@ function MonitorEditor({ existing }: { existing?: Monitor }) {
           />
         </div>
 
+        {type === "API" && (
+          <>
+            <div className="card-body form-section form-section-split">
+              <h2 className="section-title">Request</h2>
+              <RequestFields form={form} />
+            </div>
+            <div className="card-body form-section form-section-split">
+              <h2 className="section-title">Response</h2>
+              <ResponseFields form={form} />
+              <TestPanel form={form} monitorId={existing?.id} />
+            </div>
+          </>
+        )}
+
         <div className="card-body form-section form-section-split">
           <h2 className="section-title">Timing</h2>
-          <div className="form-grid">
+          <div className="form-grid form-grid-2">
             <SelectField
               label="Check every"
               error={errors.intervalSec?.message}
@@ -189,6 +235,21 @@ function MonitorEditor({ existing }: { existing?: Monitor }) {
                 </option>
               ))}
             </SelectField>
+
+            <TextField
+              label="Slow after (ms)"
+              type="number"
+              inputMode="numeric"
+              min={10}
+              step={1}
+              placeholder="No limit"
+              hint="Slower answers count as degraded, with one warning."
+              error={errors.slowAfterMs?.message}
+              {...register("slowAfterMs", {
+                setValueAs: (v: string | number | null) =>
+                  v === "" || v === null ? null : Number(v),
+              })}
+            />
           </div>
         </div>
 
