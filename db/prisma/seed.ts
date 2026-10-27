@@ -2,6 +2,7 @@
 // 30 days of history, so charts and uptime figures have something true-to-life to
 // show the first time the dashboard opens.
 import {
+  type DnsRecordType,
   MonitorType,
   PrismaClient,
   type AssertionOperator,
@@ -36,6 +37,8 @@ interface DemoMonitor {
   // An API monitor's rules, and what each failing check found.
   rules?: { path: string; operator: AssertionOperator; expected: string | null }[];
   failedRules?: Prisma.InputJsonArray;
+  // What a DNS monitor asks for.
+  dns?: { recordType: DnsRecordType; expected: string | null };
 }
 
 const monitors: DemoMonitor[] = [
@@ -59,6 +62,23 @@ const monitors: DemoMonitor[] = [
       { daysAgo: 2.3, minutes: 14, cause: "Timed out after 10 s" },
       { daysAgo: 19.6, minutes: 41, cause: "HTTP 503" },
     ],
+  },
+  {
+    name: "Mail relay",
+    type: MonitorType.TCP,
+    target: "smtp.gmail.com:587",
+    intervalSec: 120,
+    baseMs: 45,
+    outages: [{ daysAgo: 9.1, minutes: 6, cause: "No connection within 10 s" }],
+  },
+  {
+    name: "Resolver record",
+    type: MonitorType.DNS,
+    target: "one.one.one.one",
+    intervalSec: 300,
+    baseMs: 30,
+    outages: [{ daysAgo: 15.8, minutes: 10, cause: "Expected 1.1.1.1, got 1.0.0.1" }],
+    dns: { recordType: "A", expected: "1.1.1.1" },
   },
   {
     name: "Docs",
@@ -141,7 +161,8 @@ function random(seed: number) {
 // What an HTTP check would have recorded: 200 when up, the code from an "HTTP 502"
 // cause when the server answered badly, nothing when it didn't answer at all.
 function statusCode(m: DemoMonitor, outage: Outage | undefined): number | null {
-  if (m.type === MonitorType.PING) return null;
+  // Only HTTP answers have a status code.
+  if (m.type !== MonitorType.HTTP && m.type !== MonitorType.API) return null;
   if (!outage) return 200;
   if (outage.statusCode) return outage.statusCode;
   return outage.cause.startsWith("HTTP ") ? Number(outage.cause.slice(5)) : null;
@@ -383,6 +404,7 @@ async function main() {
           apiRequest: { create: { expectedStatus: "200-299" } },
           assertions: { create: demo.rules.map((r, position) => ({ position, ...r })) },
         }),
+        ...(demo.dns && { dnsQuery: { create: demo.dns } }),
       },
     });
     const { raw, rollups, incidents } = history(demo, monitor.id, now, rand);
