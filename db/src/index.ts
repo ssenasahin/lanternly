@@ -19,6 +19,24 @@ export {
   type ResolveHost,
 } from "./network.js";
 export {
+  checkApi,
+  MAX_RESPONSE_BYTES,
+  type ApiAttempt,
+  type ApiRequestSpec,
+} from "./checks/api.js";
+export { checkHttp } from "./checks/http.js";
+export {
+  describeFailure,
+  PRESENCE,
+  ruleProblem,
+  type Operator,
+  type Rule,
+  type RuleResult,
+} from "./checks/rules.js";
+export { acceptsStatus, normaliseStatusCodes, statusCodesProblem } from "./checks/status-codes.js";
+export { openHeaders, sealHeaders, toApiSpec, type StoredHeader } from "./checks/stored.js";
+export { failed, markSlow, type Attempt, type Resolve } from "./checks/types.js";
+export {
   cronProblem,
   expectedBy,
   isTimeZone,
