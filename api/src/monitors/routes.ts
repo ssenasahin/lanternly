@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient, type ResolveHost } from "@lanternly/db";
+import { Prisma, type MonitorScheduler, type PrismaClient, type ResolveHost } from "@lanternly/db";
 import { Router } from "express";
 import { z } from "zod";
 import { authOf, requireAuth } from "../auth/middleware.js";
@@ -62,13 +62,25 @@ function assertFitsInterval({ intervalSec, timeoutMs, retries }: Timing) {
 
 export interface MonitorDeps {
   prisma: PrismaClient;
+  scheduler: MonitorScheduler;
   jwtSecret: string;
   resolveHost?: ResolveHost;
 }
 
-export function monitorRouter({ prisma, jwtSecret, resolveHost }: MonitorDeps) {
+export function monitorRouter({ prisma, scheduler, jwtSecret, resolveHost }: MonitorDeps) {
   const router = Router();
   router.use(requireAuth(prisma, jwtSecret));
+
+  // The database is the source of truth; the schedule follows it. If Redis is briefly
+  // unreachable the change still saves, and the worker repairs the schedule on its
+  // next reconcile instead of the user seeing an error for something that worked.
+  async function reschedule(work: () => Promise<void>) {
+    try {
+      await work();
+    } catch (err) {
+      console.error("Couldn't update the check schedule; the worker will repair it", err);
+    }
+  }
 
   // Every lookup filters by owner as well as id, so another user's monitor is
   // indistinguishable from one that doesn't exist: both are a 404.
@@ -118,6 +130,7 @@ export function monitorRouter({ prisma, jwtSecret, resolveHost }: MonitorDeps) {
       data: { ...input, target, ownerId: userId },
       select: monitorFields,
     });
+    await reschedule(() => scheduler.sync(monitor));
     res.status(201).json({ monitor });
   });
 
@@ -146,7 +159,9 @@ export function monitorRouter({ prisma, jwtSecret, resolveHost }: MonitorDeps) {
       }
     }
 
-    res.json({ monitor: await updateOwned(id, userId, data) });
+    const monitor = await updateOwned(id, userId, data);
+    await reschedule(() => scheduler.sync(monitor));
+    res.json({ monitor });
   });
 
   router.delete("/:id", async (req, res) => {
@@ -154,6 +169,7 @@ export function monitorRouter({ prisma, jwtSecret, resolveHost }: MonitorDeps) {
     const { id } = validate(idParams, req.params);
     const { count } = await prisma.monitor.deleteMany({ where: { id, ownerId: userId } });
     if (count === 0) throw new HttpError(404, "Monitor not found");
+    await reschedule(() => scheduler.remove(id));
     res.status(204).end();
   });
 
@@ -161,6 +177,7 @@ export function monitorRouter({ prisma, jwtSecret, resolveHost }: MonitorDeps) {
     const { userId } = authOf(req);
     const { id } = validate(idParams, req.params);
     const monitor = await updateOwned(id, userId, { isActive: false, status: "PAUSED" });
+    await reschedule(() => scheduler.sync(monitor));
     res.json({ monitor });
   });
 
@@ -174,6 +191,7 @@ export function monitorRouter({ prisma, jwtSecret, resolveHost }: MonitorDeps) {
     }
     // Its last known state is stale after a pause; the next check decides it again.
     const monitor = await updateOwned(id, userId, { isActive: true, status: "PENDING" });
+    await reschedule(() => scheduler.sync(monitor));
     res.json({ monitor });
   });
 

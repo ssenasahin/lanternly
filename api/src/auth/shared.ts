@@ -1,9 +1,8 @@
-import type { PrismaClient, User } from "@lanternly/db";
+import type { Mailer, PrismaClient, User } from "@lanternly/db";
 import type { CookieOptions, Request, Response } from "express";
 import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import type { Env } from "../env.js";
-import type { Mailer } from "../mailer.js";
 import { afterFailedSignIn } from "./lockout.js";
 import { createSession, type ClientInfo } from "./sessions.js";
 import { signAccessToken } from "./tokens.js";

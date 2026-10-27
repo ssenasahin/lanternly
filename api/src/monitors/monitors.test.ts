@@ -1,6 +1,6 @@
 import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { makeApp, prisma, resetDatabase, signUp } from "../test/helpers.js";
+import { makeApp, prisma, resetDatabase, schedule, signUp } from "../test/helpers.js";
 import { MAX_MONITORS_PER_USER } from "./routes.js";
 
 beforeEach(resetDatabase);
@@ -193,5 +193,35 @@ describe("ownership", () => {
     const { app, as } = await signedIn();
     const res = await as(request(app).get("/api/monitors/not-a-uuid"));
     expect(res.status).toBe(400);
+  });
+});
+
+describe("the check schedule", () => {
+  it("follows every change to a monitor", async () => {
+    const { app, as } = await signedIn();
+    const { body } = await as(request(app).post("/api/monitors")).send(site);
+    const id = body.monitor.id as string;
+    expect(schedule.get(id)).toBe(60);
+
+    await as(request(app).patch(`/api/monitors/${id}`)).send({ intervalSec: 300 });
+    expect(schedule.get(id)).toBe(300);
+
+    await as(request(app).post(`/api/monitors/${id}/pause`));
+    expect(schedule.get(id)).toBeNull();
+
+    await as(request(app).post(`/api/monitors/${id}/resume`));
+    expect(schedule.get(id)).toBe(300);
+
+    await as(request(app).delete(`/api/monitors/${id}`));
+    expect(schedule.get(id)).toBeNull();
+  });
+
+  it("isn't touched by a refused change", async () => {
+    const { app, as } = await signedIn();
+    const { body } = await as(request(app).post("/api/monitors")).send(site);
+
+    await as(request(app).patch(`/api/monitors/${body.monitor.id}`)).send({ intervalSec: 5 });
+
+    expect(schedule.get(body.monitor.id)).toBe(60);
   });
 });

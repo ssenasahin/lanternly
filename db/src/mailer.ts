@@ -7,7 +7,7 @@ export interface Mail {
   html: string;
 }
 
-// Routes depend on this interface, not on SMTP, so tests can capture mail in memory.
+// Code that sends mail depends on this interface, not on SMTP, so tests can capture it.
 export interface Mailer {
   send(mail: Mail): Promise<void>;
 }

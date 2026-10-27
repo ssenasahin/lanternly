@@ -10,6 +10,7 @@ function appWith(checkDatabase: () => Promise<void>) {
     env: testEnv,
     prisma: {} as PrismaClient,
     mailer: { send: async () => {} },
+    scheduler: { sync: async () => {}, remove: async () => {} },
     checkDatabase,
   });
 }

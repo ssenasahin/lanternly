@@ -23,7 +23,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "dev": "concurrently -n api,web -c yellow,cyan \"npm run dev -w api\" \"npm run dev -w web\"",
+    "dev": "concurrently -n api,worker,web -c yellow,magenta,cyan \"npm run dev -w api\" \"npm run dev -w worker\" \"npm run dev -w web\"",
     "admin:create": "npm run admin:create -w api"
   },
   "overrides": {

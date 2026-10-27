@@ -1,9 +1,8 @@
-import { PrismaClient } from "@lanternly/db";
+import { PrismaClient, type Mail, type Mailer, type MonitorScheduler } from "@lanternly/db";
 import { generate } from "otplib";
 import request, { type Response } from "supertest";
 import { createApp } from "../app.js";
 import type { Env } from "../env.js";
-import type { Mail, Mailer } from "../mailer.js";
 import { TEST_DATABASE_URL } from "./database.js";
 
 export const testEnv: Env = {
@@ -11,9 +10,10 @@ export const testEnv: Env = {
   API_PORT: 0,
   DATABASE_URL: TEST_DATABASE_URL,
   WEB_ORIGIN: "http://localhost:5173",
+  REDIS_URL: "redis://127.0.0.1:6379",
   JWT_SECRET: "test-secret-that-is-at-least-thirty-two-characters",
   ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
-  SMTP_HOST: "localhost",
+  SMTP_HOST: "127.0.0.1",
   SMTP_PORT: 1025,
   MAIL_FROM: "Lanternly <test@lanternly.local>",
   TRUST_PROXY: 0,
@@ -33,8 +33,21 @@ const memoryMailer: Mailer = {
 // Every table hangs off users, so truncating it with CASCADE empties them all.
 export async function resetDatabase(): Promise<void> {
   outbox.length = 0;
+  schedule.clear();
   await prisma.$executeRawUnsafe("TRUNCATE TABLE users CASCADE");
 }
+
+// Records schedule changes instead of talking to Redis. Each entry is the monitor id,
+// with its interval while it's scheduled, or null once it's stopped.
+export const schedule = new Map<string, number | null>();
+const memoryScheduler: MonitorScheduler = {
+  async sync(monitor) {
+    schedule.set(monitor.id, monitor.isActive ? monitor.intervalSec : null);
+  },
+  async remove(monitorId) {
+    schedule.set(monitorId, null);
+  },
+};
 
 // Fake DNS for the SSRF tests. Any name not listed here doesn't exist.
 export const dnsRecords: Record<string, string[]> = {
@@ -57,6 +70,7 @@ export function makeApp(env: Partial<Env> = {}) {
     env: { ...testEnv, ...env },
     prisma,
     mailer: memoryMailer,
+    scheduler: memoryScheduler,
     resolveHost: fakeResolve,
   });
 }

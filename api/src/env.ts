@@ -7,13 +7,15 @@ const schema = z.object({
   API_PORT: z.coerce.number().int().positive().default(4000),
   DATABASE_URL: z.url(),
   WEB_ORIGIN: z.url(),
+  // Where the check schedule lives; the worker reads the same queues.
+  REDIS_URL: z.url().default("redis://127.0.0.1:6379"),
   // Signs access tokens. Anyone holding it can mint a token for any user.
   JWT_SECRET: z.string().min(32, "must be at least 32 characters"),
   // Encrypts TOTP secrets and channel tokens at rest. Losing it makes them unreadable.
   ENCRYPTION_KEY: z
     .string()
     .refine((v) => Buffer.from(v, "base64").length === 32, "must be 32 bytes, base64-encoded"),
-  SMTP_HOST: z.string().default("localhost"),
+  SMTP_HOST: z.string().default("127.0.0.1"),
   SMTP_PORT: z.coerce.number().int().positive().default(1025),
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),

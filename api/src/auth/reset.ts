@@ -1,8 +1,8 @@
 import { randomBytes } from "node:crypto";
+import { emailLayout, escapeHtml } from "@lanternly/db";
 import { Router } from "express";
 import { z } from "zod";
 import { HttpError, validate } from "../http.js";
-import { emailLayout, escapeHtml } from "../mailer.js";
 import { hashPassword, passwordProblem } from "./password.js";
 import { authLimiter, emailField, type AuthDeps } from "./shared.js";
 import { sha256 } from "./tokens.js";
