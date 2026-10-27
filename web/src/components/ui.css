@@ -1,0 +1,233 @@
+/* Shared building blocks. Screens compose these instead of styling from scratch. */
+
+/* --- Buttons: a class, so it works on <button> and on router <Link> alike --- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 34px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--raised);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 120ms var(--ease),
+    border-color 120ms var(--ease),
+    color 120ms var(--ease);
+}
+
+.btn:hover {
+  border-color: var(--faint);
+  color: var(--text);
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.btn-primary:hover {
+  border-color: transparent;
+  background: var(--accent-hover);
+  color: var(--accent-ink);
+}
+
+.btn-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+}
+
+.btn-ghost:hover {
+  border-color: transparent;
+  background: var(--raised);
+}
+
+.btn-danger {
+  border-color: transparent;
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.btn-danger:hover {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+.btn-sm {
+  height: 28px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-xs);
+}
+
+.btn-icon {
+  width: 34px;
+  padding: 0;
+}
+
+/* --- Status badges: colour, icon and word together, never colour alone --- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px 0 6px;
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.badge-up {
+  background: var(--good-soft);
+  color: var(--good);
+}
+
+.badge-down {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.badge-degraded {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.badge-maintenance {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.badge-paused,
+.badge-pending {
+  background: var(--raised);
+  color: var(--muted);
+}
+
+/* --- Cards --- */
+.card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.card-body {
+  padding: var(--space-5);
+}
+
+/* --- Empty states: say what this place is for and what to do next --- */
+.empty {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-2);
+  padding: var(--space-7) var(--space-5);
+  text-align: center;
+}
+
+.empty-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--raised);
+  color: var(--accent);
+}
+
+.empty p {
+  max-width: 42ch;
+  color: var(--muted);
+}
+
+.empty-action {
+  margin-top: var(--space-3);
+}
+
+/* --- Skeletons for loading states --- */
+.skeleton {
+  display: block;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--raised) 0%, var(--line) 50%, var(--raised) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+/* --- Form fields --- */
+.field {
+  display: grid;
+  gap: 6px;
+}
+
+.field-label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.field-hint {
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.field-error {
+  font-size: var(--text-xs);
+  color: var(--bad);
+}
+
+.input {
+  height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  transition: border-color 120ms var(--ease);
+}
+
+.input::placeholder {
+  color: var(--faint);
+}
+
+.input:hover {
+  border-color: var(--faint);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.input[aria-invalid="true"] {
+  border-color: var(--bad);
+}
+
+.input-mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
