@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useLocation } from "react-router";
 import { LanternMark } from "../brand/Logo";
+import { NotFoundPage } from "../pages/NotFound";
 import { useAuth } from "./AuthProvider";
 import "./auth.css";
 
@@ -40,5 +41,13 @@ export function RedirectIfSignedIn() {
   const { state } = useAuth();
   if (state.status === "loading") return <Restoring />;
   if (state.status === "signedIn") return <Navigate to="/" replace />;
+  return <Outlet />;
+}
+
+// The admin pages, for super admins only. Anyone else sees the same page as for an
+// address that doesn't exist, rather than learning the panel is there.
+export function RequireAdmin() {
+  const { state } = useAuth();
+  if (state.status !== "signedIn" || state.user.role !== "SUPER_ADMIN") return <NotFoundPage />;
   return <Outlet />;
 }

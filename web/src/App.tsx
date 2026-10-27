@@ -1,7 +1,7 @@
 import { createBrowserRouter, RouterProvider } from "react-router";
 import { Layout, type RouteHandle } from "./app/Layout";
 import { AuthLayout } from "./auth/AuthLayout";
-import { RedirectIfSignedIn, RequireAuth, SECURITY_PATH } from "./auth/guards";
+import { RedirectIfSignedIn, RequireAdmin, RequireAuth, SECURITY_PATH } from "./auth/guards";
 import { ForgotPasswordPage } from "./pages/auth/ForgotPassword";
 import { ResetPasswordPage } from "./pages/auth/ResetPassword";
 import { SignInPage } from "./pages/auth/SignIn";
@@ -46,6 +46,20 @@ const agentNew = async () => ({
 const apiKeys = async () => ({
   Component: (await import("./pages/settings/ApiKeys")).ApiKeysPage,
 });
+
+const adminUsers = async () => ({
+  Component: (await import("./pages/admin/AdminUsers")).AdminUsersPage,
+});
+const adminUser = async () => ({
+  Component: (await import("./pages/admin/AdminUser")).AdminUserPage,
+});
+const systemHealth = async () => ({
+  Component: (await import("./pages/admin/SystemHealth")).SystemHealthPage,
+});
+const auditLog = async () => ({
+  Component: (await import("./pages/admin/AuditLog")).AuditLogPage,
+});
+const plans = async () => ({ Component: (await import("./pages/admin/Plans")).PlansPage });
 
 const router = createBrowserRouter([
   {
@@ -100,6 +114,16 @@ const router = createBrowserRouter([
           { path: "/settings/api-keys", lazy: apiKeys, handle: title("API keys") },
           { path: "/styleguide", lazy: styleGuide, handle: title("Style guide") },
           { path: "/brand", lazy: brand, handle: title("Brand") },
+          {
+            element: <RequireAdmin />,
+            children: [
+              { path: "/admin/users", lazy: adminUsers, handle: title("Users") },
+              { path: "/admin/users/:id", lazy: adminUser, handle: title("User") },
+              { path: "/admin/system", lazy: systemHealth, handle: title("System health") },
+              { path: "/admin/audit", lazy: auditLog, handle: title("Audit log") },
+              { path: "/admin/plans", lazy: plans, handle: title("Plans") },
+            ],
+          },
           { path: "*", element: <NotFoundPage />, handle: title("Not found") },
         ],
       },

@@ -1,15 +1,19 @@
 import {
+  Activity,
   BellRing,
+  Gauge,
   KeyRound,
   ListOrdered,
   LogOut,
   Moon,
   Palette,
   Radar,
+  ScrollText,
   Shapes,
   ShieldCheck,
   Siren,
   Sun,
+  UserCog,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -30,7 +34,13 @@ interface NavItem {
   owns?: string[];
 }
 
-const NAV: { heading: string; items: NavItem[] }[] = [
+interface NavSection {
+  heading: string;
+  items: NavItem[];
+  adminOnly?: boolean;
+}
+
+const NAV: NavSection[] = [
   {
     heading: "Monitor",
     items: [
@@ -59,6 +69,16 @@ const NAV: { heading: string; items: NavItem[] }[] = [
     ],
   },
   {
+    heading: "Admin",
+    adminOnly: true,
+    items: [
+      { to: "/admin/users", label: "Users", icon: UserCog },
+      { to: "/admin/system", label: "System health", icon: Activity },
+      { to: "/admin/audit", label: "Audit log", icon: ScrollText },
+      { to: "/admin/plans", label: "Plans", icon: Gauge },
+    ],
+  },
+  {
     heading: "Design",
     items: [
       { to: "/styleguide", label: "Style guide", icon: Palette },
@@ -76,6 +96,7 @@ export function Layout() {
   const scrolled = useScrolled();
   const [theme, setTheme] = useState<Theme>(readTheme);
   const { pathname } = useLocation();
+  const isAdmin = useUser().role === "SUPER_ADMIN";
 
   useEffect(() => applyTheme(theme), [theme]);
 
@@ -87,7 +108,7 @@ export function Layout() {
         </NavLink>
 
         <nav className="nav" aria-label="Main">
-          {NAV.map((section) => (
+          {NAV.filter((s) => isAdmin || !s.adminOnly).map((section) => (
             <div className="nav-section" key={section.heading}>
               <span className="nav-heading">{section.heading}</span>
               {section.items.map(({ to, label, icon: Icon, owns }) => (
