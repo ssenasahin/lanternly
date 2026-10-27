@@ -225,3 +225,40 @@ describe("the check schedule", () => {
     expect(schedule.get(body.monitor.id)).toBe(60);
   });
 });
+
+describe("a monitor's details", () => {
+  it("shows the open incident and recent checks, newest first", async () => {
+    const { app, as } = await signedIn();
+    const { body } = await as(request(app).post("/api/monitors")).send(site);
+    const monitorId = body.monitor.id as string;
+    await prisma.checkResult.createMany({
+      data: [
+        { monitorId, status: "UP", responseMs: 120, statusCode: 200, checkedAt: new Date(1000) },
+        {
+          monitorId,
+          status: "DOWN",
+          statusCode: 503,
+          error: "HTTP 503",
+          checkedAt: new Date(2000),
+        },
+      ],
+    });
+    await prisma.incident.create({ data: { monitorId, cause: "HTTP 503" } });
+
+    const detail = await as(request(app).get(`/api/monitors/${monitorId}`));
+    expect(detail.body.openIncident).toMatchObject({ cause: "HTTP 503" });
+
+    const checks = await as(request(app).get(`/api/monitors/${monitorId}/checks?limit=10`));
+    expect(checks.status).toBe(200);
+    expect(checks.body.checks.map((c: { status: string }) => c.status)).toEqual(["DOWN", "UP"]);
+  });
+
+  it("keeps someone else's checks private", async () => {
+    const ada = await signedIn("ada@example.com");
+    const grace = await signedIn("grace@example.com");
+    const { body } = await grace.as(request(grace.app).post("/api/monitors")).send(site);
+
+    const res = await ada.as(request(ada.app).get(`/api/monitors/${body.monitor.id}/checks`));
+    expect(res.status).toBe(404);
+  });
+});

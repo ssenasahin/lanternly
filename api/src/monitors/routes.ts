@@ -27,6 +27,7 @@ const createSchema = z.object({
 const updateSchema = z.object(fields).partial();
 
 const idParams = z.object({ id: z.uuid() });
+const checksQuery = z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) });
 
 // Everything the owner may see. The owner id is left out: it's always the caller.
 const monitorFields = {
@@ -137,7 +138,37 @@ export function monitorRouter({ prisma, scheduler, jwtSecret, resolveHost }: Mon
   router.get("/:id", async (req, res) => {
     const { userId } = authOf(req);
     const { id } = validate(idParams, req.params);
-    res.json({ monitor: await findOwned(id, userId) });
+    const monitor = await findOwned(id, userId);
+    // The outage in progress, if any: what the "is down" email links to.
+    const openIncident = await prisma.incident.findFirst({
+      where: { monitorId: id, resolvedAt: null },
+      orderBy: { startedAt: "desc" },
+      select: { id: true, startedAt: true, cause: true },
+    });
+    res.json({ monitor, openIncident });
+  });
+
+  // The most recent results, newest first. Charts over a time range come later.
+  router.get("/:id/checks", async (req, res) => {
+    const { userId } = authOf(req);
+    const { id } = validate(idParams, req.params);
+    const { limit } = validate(checksQuery, req.query);
+    await findOwned(id, userId);
+    const checks = await prisma.checkResult.findMany({
+      where: { monitorId: id },
+      orderBy: { checkedAt: "desc" },
+      take: limit,
+      select: {
+        id: true,
+        status: true,
+        responseMs: true,
+        statusCode: true,
+        error: true,
+        checkedAt: true,
+      },
+    });
+    // Check ids are BigInts, which JSON can't carry; as strings they're just keys.
+    res.json({ checks: checks.map((c) => ({ ...c, id: c.id.toString() })) });
   });
 
   router.patch("/:id", async (req, res) => {
