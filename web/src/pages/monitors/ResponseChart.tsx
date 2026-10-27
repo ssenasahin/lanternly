@@ -3,6 +3,7 @@ import {
   AreaChart,
   CartesianGrid,
   ReferenceArea,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -68,6 +69,8 @@ interface Props {
   // Draw the line across empty buckets. Right for a job that runs now and then, where
   // a bucket without a run is normal; wrong for checks, where a gap means no data.
   sparse?: boolean;
+  // The monitor's slowness limit, drawn as a dashed line, if it has one.
+  threshold?: number | null;
 }
 
 // Average response time over the range, one series, so no legend: the card's title
@@ -78,6 +81,7 @@ export default function ResponseChart({
   bucketSec,
   noun = "check",
   sparse = false,
+  threshold = null,
 }: Props) {
   const yTicks = minuteTicks(series);
   // The last bucket's x is its start; spans may end after it, so clamp them.
@@ -117,6 +121,14 @@ export default function ResponseChart({
               ifOverflow="extendDomain"
             />
           ))}
+          {threshold !== null && (
+            <ReferenceLine
+              y={threshold}
+              className="chart-threshold"
+              ifOverflow="extendDomain"
+              label={{ value: `slow after ${msTick(threshold)}`, position: "insideTopRight" }}
+            />
+          )}
           <Tooltip
             content={({ active, payload }) => (
               <ChartTooltip

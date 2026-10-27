@@ -49,9 +49,12 @@ export function MonitorStats({
   monitorId,
   measure = "check",
   defaultRange = "24h",
+  slowAfterMs = null,
 }: {
   monitorId: string;
   measure?: Measure;
+  // Drawn on the chart, so a slow spell can be read against the limit.
+  slowAfterMs?: number | null;
   // A daily job has one run in 24 hours; its page starts on a longer range.
   defaultRange?: Range;
 }) {
@@ -103,7 +106,7 @@ export function MonitorStats({
             note={s.failures ? `${s.failures} down` : "none down"}
           />
         </div>
-        <ResponseCard stats={s} measure={measure} />
+        <ResponseCard stats={s} measure={measure} slowAfterMs={slowAfterMs} />
       </div>
     </>
   );
@@ -127,7 +130,15 @@ const VIEWS = [
 
 // The chart, with the same numbers available as a table for anyone who can't (or
 // would rather not) read them off a line.
-function ResponseCard({ stats, measure }: { stats: Stats; measure: Measure }) {
+function ResponseCard({
+  stats,
+  measure,
+  slowAfterMs,
+}: {
+  stats: Stats;
+  measure: Measure;
+  slowAfterMs: number | null;
+}) {
   const [view, setView] = useState<View>("chart");
   const words = WORDS[measure];
   const hasData = stats.series.some((b) => b.checks > 0);
@@ -162,6 +173,7 @@ function ResponseCard({ stats, measure }: { stats: Stats; measure: Measure }) {
               bucketSec={stats.bucketSec}
               noun={words.noun}
               sparse={measure === "run"}
+              threshold={slowAfterMs}
             />
           </Suspense>
         </div>
