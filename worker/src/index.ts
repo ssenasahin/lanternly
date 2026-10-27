@@ -12,9 +12,12 @@ import { Queue, Worker } from "bullmq";
 import { loadEnv } from "./env.js";
 import { sendIncidentEmail } from "./notify.js";
 import { processCheck } from "./process-check.js";
+import { rollUpOldChecks } from "./rollup.js";
 import { reconcileSchedules } from "./schedule.js";
 
 const RECONCILE_EVERY_MS = 5 * 60 * 1000;
+// Housekeeping that runs on a clock rather than per monitor.
+const MAINTENANCE_QUEUE = "maintenance";
 
 const env = loadEnv();
 const connection = redisConnection(env.REDIS_URL);
@@ -29,6 +32,14 @@ const mailer = smtpMailer({
 
 const checks = new Queue<CheckJob>(CHECKS_QUEUE, { connection });
 const notifications = new Queue<NotificationJob>(NOTIFICATIONS_QUEUE, { connection });
+const maintenance = new Queue(MAINTENANCE_QUEUE, { connection });
+
+// Every night at 03:00, server time, when traffic is lowest.
+await maintenance.upsertJobScheduler(
+  "roll-up-checks",
+  { pattern: "0 3 * * *" },
+  { name: "roll-up-checks", opts: { removeOnComplete: true, removeOnFail: { count: 30 } } },
+);
 
 const checkWorker = new Worker<CheckJob>(
   CHECKS_QUEUE,
@@ -54,7 +65,16 @@ const notificationWorker = new Worker<NotificationJob>(
   { connection },
 );
 
-for (const worker of [checkWorker, notificationWorker]) {
+const maintenanceWorker = new Worker(
+  MAINTENANCE_QUEUE,
+  async () => {
+    const { cutoff, hours } = await rollUpOldChecks(prisma);
+    console.log(`rolled up ${hours} monitor-hours of results older than ${cutoff.toISOString()}`);
+  },
+  { connection },
+);
+
+for (const worker of [checkWorker, notificationWorker, maintenanceWorker]) {
   worker.on("failed", (job, err) => {
     console.error(`${worker.name} job ${job?.id ?? "?"} failed:`, err.message);
   });
@@ -76,8 +96,13 @@ console.log(`lanternly worker running ${env.CHECK_CONCURRENCY} checks at a time`
 // Let running checks finish, then close Redis and database connections.
 async function shutdown() {
   clearInterval(timer);
-  await Promise.all([checkWorker.close(), notificationWorker.close()]);
-  await Promise.all([checks.close(), notifications.close(), prisma.$disconnect()]);
+  await Promise.all([checkWorker.close(), notificationWorker.close(), maintenanceWorker.close()]);
+  await Promise.all([
+    checks.close(),
+    notifications.close(),
+    maintenance.close(),
+    prisma.$disconnect(),
+  ]);
   await connection.quit();
   process.exit(0);
 }
