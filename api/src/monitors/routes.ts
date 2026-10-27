@@ -3,6 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { authOf, requireAuth } from "../auth/middleware.js";
 import { HttpError, validate } from "../http.js";
+import { lastDayStrips, RANGES, rangeStats, uptimeWindows, type Range } from "./stats.js";
 import { checkTarget } from "./target.js";
 
 // Until the admin panel can set limits per plan, everyone gets the same cap.
@@ -27,7 +28,16 @@ const createSchema = z.object({
 const updateSchema = z.object(fields).partial();
 
 const idParams = z.object({ id: z.uuid() });
-const checksQuery = z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) });
+const checksQuery = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(200).default(50),
+    from: z.coerce.date().optional(),
+    to: z.coerce.date().optional(),
+  })
+  .refine((q) => !q.from || !q.to || q.from <= q.to, { message: "from must be before to" });
+const statsQuery = z.object({
+  range: z.enum(Object.keys(RANGES) as [Range, ...Range[]]).default("24h"),
+});
 
 // Everything the owner may see. The owner id is left out: it's always the caller.
 const monitorFields = {
@@ -113,7 +123,12 @@ export function monitorRouter({ prisma, scheduler, jwtSecret, resolveHost }: Mon
       orderBy: { createdAt: "asc" },
       select: monitorFields,
     });
-    res.json({ monitors });
+    // The last 24 hours of each, hour by hour, for the strip beside every row.
+    const strips = await lastDayStrips(
+      prisma,
+      monitors.map((m) => m.id),
+    );
+    res.json({ monitors: monitors.map((m) => ({ ...m, lastDay: strips.get(m.id) })) });
   });
 
   router.post("/", async (req, res) => {
@@ -148,14 +163,28 @@ export function monitorRouter({ prisma, scheduler, jwtSecret, resolveHost }: Mon
     res.json({ monitor, openIncident });
   });
 
-  // The most recent results, newest first. Charts over a time range come later.
+  // Uptime over the three standard windows (24h, 7d, 30d), plus uptime, response times
+  // and a chart series for the range the user picked.
+  router.get("/:id/stats", async (req, res) => {
+    const { userId } = authOf(req);
+    const { id } = validate(idParams, req.params);
+    const { range } = validate(statsQuery, req.query);
+    await findOwned(id, userId);
+    const [windows, stats] = await Promise.all([
+      uptimeWindows(prisma, id),
+      rangeStats(prisma, id, range),
+    ]);
+    res.json({ range, windows, ...stats });
+  });
+
+  // Individual results, newest first, optionally between from and to.
   router.get("/:id/checks", async (req, res) => {
     const { userId } = authOf(req);
     const { id } = validate(idParams, req.params);
-    const { limit } = validate(checksQuery, req.query);
+    const { limit, from, to } = validate(checksQuery, req.query);
     await findOwned(id, userId);
     const checks = await prisma.checkResult.findMany({
-      where: { monitorId: id },
+      where: { monitorId: id, checkedAt: { gte: from, lte: to } },
       orderBy: { checkedAt: "desc" },
       take: limit,
       select: {
