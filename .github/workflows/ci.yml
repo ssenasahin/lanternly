@@ -21,6 +21,26 @@ jobs:
       # Needed to clone the repository, and nothing more.
       contents: read
 
+    # The API tests run against a real Postgres, as they do locally; a mock would
+    # hide the very bugs they exist to catch (constraints, concurrent updates).
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: lanternly
+          POSTGRES_PASSWORD: lanternly
+          POSTGRES_DB: lanternly_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lanternly"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL_TEST: postgresql://lanternly:lanternly@localhost:5432/lanternly_test
+
     steps:
       - uses: actions/checkout@v4
         with:

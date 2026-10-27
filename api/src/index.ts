@@ -3,12 +3,7 @@ import { createApp } from "./app.js";
 import { loadEnv } from "./env.js";
 
 const env = loadEnv();
-
-const app = createApp({
-  checkDatabase: async () => {
-    await prisma.$queryRaw`SELECT 1`;
-  },
-});
+const app = createApp({ env, prisma });
 
 const server = app.listen(env.API_PORT, () => {
   console.log(`lanternly api listening on http://localhost:${env.API_PORT}`);

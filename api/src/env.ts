@@ -7,6 +7,11 @@ const schema = z.object({
   API_PORT: z.coerce.number().int().positive().default(4000),
   DATABASE_URL: z.url(),
   WEB_ORIGIN: z.url(),
+  // Signs access tokens. Anyone holding it can mint a token for any user.
+  JWT_SECRET: z.string().min(32, "must be at least 32 characters"),
+  // How many reverse proxies sit in front of the API; needed to read the client's real IP.
+  TRUST_PROXY: z.coerce.number().int().min(0).default(0),
+  AUTH_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(10),
 });
 
 export type Env = z.infer<typeof schema>;
