@@ -48,9 +48,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [queryClient]);
 
   // On load, the refresh cookie (if any) restores the session without a password.
+  // Without one there was no account, so the cache holds nothing to clear, only
+  // what a public page (an acknowledge link) is fetching right now.
   useEffect(() => {
     onSessionEnded(end);
-    void refreshSession().then((body) => (body ? begin(body) : end()));
+    void refreshSession().then((body) => (body ? begin(body) : setState({ status: "signedOut" })));
   }, [begin, end]);
 
   const value = useMemo<AuthContextValue>(

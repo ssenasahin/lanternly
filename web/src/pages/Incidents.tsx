@@ -91,10 +91,13 @@ function IncidentRow({ incident: i, now }: { incident: Incident; now: number }) 
   return (
     <tr>
       <td>
-        <StatusBadge
-          status={i.resolvedAt ? "up" : "down"}
-          label={i.resolvedAt ? "Resolved" : "Ongoing"}
-        />
+        {i.resolvedAt ? (
+          <StatusBadge status="up" label="Resolved" />
+        ) : i.acknowledgedAt ? (
+          <StatusBadge status="degraded" label="Acknowledged" />
+        ) : (
+          <StatusBadge status="down" label="Ongoing" />
+        )}
       </td>
       <td>
         <Link to={`/monitors/${i.monitor.id}`} className="incident-monitor">
@@ -105,7 +108,9 @@ function IncidentRow({ incident: i, now }: { incident: Incident; now: number }) 
         </div>
       </td>
       <td>
-        <span className="mono">{formatTime(i.startedAt)}</span>
+        <Link to={`/incidents/${i.id}`} className="mono">
+          {formatTime(i.startedAt)}
+        </Link>
         <div className="incident-ago">{timeAgo(i.startedAt, now)}</div>
       </td>
       <td>

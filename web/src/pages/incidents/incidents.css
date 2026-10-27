@@ -1,0 +1,86 @@
+.incident-title-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.incident-title-link:hover {
+  text-decoration: underline;
+}
+
+/* What happened, top to bottom, on a line joining the dots. */
+.timeline {
+  position: relative;
+  display: grid;
+  gap: var(--space-5);
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.timeline::before {
+  content: "";
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 13px;
+  width: 2px;
+  background: var(--line);
+}
+
+.timeline-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.timeline-dot {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--raised);
+  color: var(--muted);
+}
+
+.tone-bad .timeline-dot {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+
+.tone-warn .timeline-dot {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.tone-info .timeline-dot {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+.tone-good .timeline-dot {
+  background: var(--good-soft);
+  color: var(--good);
+}
+
+.timeline-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  align-items: baseline;
+  padding-top: 4px;
+}
+
+.timeline-head time {
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.timeline-detail {
+  margin-top: 2px;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}

@@ -248,7 +248,11 @@ export function MonitorIncidents({ monitorId }: { monitorId: string }) {
             <tbody>
               {incidents.data.map((i) => (
                 <tr key={i.id}>
-                  <td className="mono">{formatTime(i.startedAt)}</td>
+                  <td>
+                    <Link to={`/incidents/${i.id}`} className="mono">
+                      {formatTime(i.startedAt)}
+                    </Link>
+                  </td>
                   <td>
                     {i.resolvedAt ? (
                       formatDuration(Date.parse(i.resolvedAt) - Date.parse(i.startedAt))
