@@ -2,7 +2,9 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { Status } from "../components";
 import { api } from "./client";
 
-export type MonitorType = "HTTP" | "PING" | "HEARTBEAT";
+export type MonitorType = "HTTP" | "API" | "PING" | "HEARTBEAT";
+// The types Lanternly checks itself, as opposed to heartbeats that call in.
+export type CheckedType = Exclude<MonitorType, "HEARTBEAT">;
 export type MonitorStatus = "PENDING" | "UP" | "DOWN" | "DEGRADED" | "PAUSED";
 
 // What a heartbeat expects, as monitor lists carry it. The ping URL is not here: it
@@ -15,6 +17,35 @@ export interface HeartbeatSchedule {
   lastPingAt: string | null;
 }
 
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD";
+export type BodyType = "NONE" | "JSON" | "FORM";
+export type Operator =
+  "EQUALS" | "NOT_EQUALS" | "CONTAINS" | "GREATER_THAN" | "LESS_THAN" | "EXISTS" | "NOT_EXISTS";
+
+export interface Rule {
+  path: string;
+  operator: Operator;
+  expected: string | null;
+}
+
+// One rule's verdict on a response: received is the value found, as JSON, or null if
+// the path led nowhere.
+export interface RuleResult extends Rule {
+  passed: boolean;
+  received: string | null;
+}
+
+// How an API monitor calls its endpoint. A secret header's value never comes back
+// from the API: it's null, and sending null again keeps the stored one.
+export interface ApiSettings {
+  method: HttpMethod;
+  headers: { name: string; value: string | null; secret: boolean }[];
+  bodyType: BodyType;
+  body: string | null;
+  expectedStatus: string;
+  rules: Rule[];
+}
+
 export interface Monitor {
   id: string;
   name: string;
@@ -23,6 +54,8 @@ export interface Monitor {
   intervalSec: number;
   timeoutMs: number;
   retries: number;
+  // Slower answers count as degraded; null when there's no limit.
+  slowAfterMs: number | null;
   isActive: boolean;
   status: MonitorStatus;
   lastCheckedAt: string | null;
@@ -30,6 +63,8 @@ export interface Monitor {
   updatedAt: string;
   // Set for heartbeats only.
   heartbeat: HeartbeatSchedule | null;
+  // Set for API monitors only.
+  api: ApiSettings | null;
 }
 
 // One hour of the last 24, oldest first, as the list's strip shows it.
@@ -44,10 +79,21 @@ export interface ListedMonitor extends Monitor {
 
 export type MonitorInput = Pick<
   Monitor,
-  "name" | "target" | "intervalSec" | "timeoutMs" | "retries"
+  "name" | "target" | "intervalSec" | "timeoutMs" | "retries" | "slowAfterMs"
 > & {
-  type: "HTTP" | "PING";
+  type: CheckedType;
+  api?: ApiSettings;
 };
+
+// What "Test now" found: the check's verdict plus what the API sent back.
+export interface TestResult {
+  status: "UP" | "DOWN" | "DEGRADED";
+  responseMs: number | null;
+  statusCode: number | null;
+  error: string | null;
+  rules: RuleResult[];
+  response: { contentType: string | null; body: string; truncated: boolean } | null;
+}
 
 export interface Check {
   id: string;
@@ -55,6 +101,8 @@ export interface Check {
   responseMs: number | null;
   statusCode: number | null;
   error: string | null;
+  // Every rule's verdict, kept when one of them failed.
+  rules: RuleResult[] | null;
   checkedAt: string;
 }
 

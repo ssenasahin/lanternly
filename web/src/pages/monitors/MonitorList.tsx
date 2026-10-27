@@ -1,4 +1,14 @@
-import { ChevronRight, Globe, HeartPulse, Plus, Radar, Radio, Search, SearchX } from "lucide-react";
+import {
+  Braces,
+  ChevronRight,
+  Globe,
+  HeartPulse,
+  Plus,
+  Radar,
+  Radio,
+  Search,
+  SearchX,
+} from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 import {
@@ -211,10 +221,11 @@ function hourSlots(slots: HourSlot[]): StripSlot[] {
 
 // The second line of a row: what is checked, or what a heartbeat expects.
 function subtitle(m: ListedMonitor): string {
-  return m.heartbeat ? `heartbeat, ${describeSchedule(m.heartbeat)}` : m.target;
+  if (m.heartbeat) return `heartbeat, ${describeSchedule(m.heartbeat)}`;
+  return m.api ? `${m.api.method} ${m.target}` : m.target;
 }
 
-const TYPE_ICONS = { HTTP: Globe, PING: Radio, HEARTBEAT: HeartPulse };
+const TYPE_ICONS = { HTTP: Globe, API: Braces, PING: Radio, HEARTBEAT: HeartPulse };
 
 function MonitorRow({ monitor: m }: { monitor: ListedMonitor }) {
   const TypeIcon = TYPE_ICONS[m.type];
