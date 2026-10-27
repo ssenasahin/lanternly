@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { rollUpOldChecks, rollupCutoff } from "./rollup.js";
-import { makeMonitor, prisma, resetDatabase } from "./test/database.js";
+import { pruneOldPings, rollUpOldChecks, rollupCutoff } from "./rollup.js";
+import { makeHeartbeat, makeMonitor, prisma, resetDatabase } from "./test/database.js";
 
 beforeEach(resetDatabase);
 afterAll(() => prisma.$disconnect());
@@ -78,5 +78,20 @@ describe("rollUpOldChecks", () => {
       responseCount: 2,
       responseAvgMs: 200,
     });
+  });
+});
+
+describe("pruneOldPings", () => {
+  it("deletes pings older than a month and keeps the rest", async () => {
+    const { id: monitorId } = await makeHeartbeat();
+    await prisma.heartbeatPing.createMany({
+      data: [
+        { monitorId, kind: "SUCCESS", receivedAt: daysAgo(31) },
+        { monitorId, kind: "START", receivedAt: daysAgo(30, 1) },
+      ],
+    });
+
+    expect(await pruneOldPings(prisma, NOW)).toBe(1);
+    expect(await prisma.heartbeatPing.count()).toBe(1);
   });
 });

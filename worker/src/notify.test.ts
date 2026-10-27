@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDuration, incidentEmail } from "./notify.js";
+import { formatDuration, incidentEmail, slowEmail } from "./notify.js";
 
 const incident = {
   monitor: { id: "m1", name: "Shop <script>", target: "https://shop.example.com/?a=1&b=2" },
@@ -27,6 +27,27 @@ describe("incidentEmail", () => {
     expect(html).not.toContain("<script>");
     expect(html).toContain("Shop &lt;script&gt;");
     expect(html).toContain("a=1&amp;b=2");
+  });
+});
+
+describe("slowEmail", () => {
+  const check = {
+    monitor: { id: "h1", name: "Nightly backup", target: "" },
+    checkedAt: new Date("2026-10-27T03:04:00Z"),
+    error: "Ran for 9 min, more than twice the usual 4 min",
+  };
+
+  it("says what got slow and by how much, without opening an incident", () => {
+    const mail = slowEmail(check, "https://app.test");
+    expect(mail.subject).toBe("Slow: Nightly backup");
+    expect(mail.text).toContain("Detail: Ran for 9 min, more than twice the usual 4 min");
+    expect(mail.text).toContain("no incident is open");
+  });
+
+  it("leaves out the target for a heartbeat, which has none", () => {
+    const mail = slowEmail(check, "https://app.test");
+    expect(mail.text).not.toContain("Target:");
+    expect(mail.html).not.toContain("Target");
   });
 });
 

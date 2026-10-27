@@ -19,3 +19,30 @@ export async function makeMonitor(data: { type?: "HTTP" | "PING"; target: string
     data: { ownerId: owner.id, name: "Marketing site", type: "HTTP", retries: 0, ...data },
   });
 }
+
+// A user with one heartbeat that expects a ping every hour, with five minutes' grace.
+export async function makeHeartbeat(
+  data: { status?: "PENDING" | "UP" | "DOWN"; lastPingAt?: Date; isActive?: boolean } = {},
+) {
+  const owner = await prisma.user.create({
+    data: { email: "ada@example.com", passwordHash: "not-a-real-hash" },
+  });
+  return prisma.monitor.create({
+    data: {
+      ownerId: owner.id,
+      name: "Nightly backup",
+      type: "HEARTBEAT",
+      target: "",
+      status: data.status ?? "UP",
+      isActive: data.isActive ?? true,
+      heartbeat: {
+        create: {
+          token: `token-${Math.random()}`,
+          periodSec: 3600,
+          graceSec: 300,
+          lastPingAt: data.lastPingAt ?? null,
+        },
+      },
+    },
+  });
+}
