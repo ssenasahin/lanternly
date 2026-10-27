@@ -1,0 +1,113 @@
+import { Moon, Palette, Radar, Shapes, Siren, Sun, type LucideIcon } from "lucide-react";
+import { useEffect, useState } from "react";
+import { NavLink, Outlet, useMatches } from "react-router";
+import { Logo } from "../brand/Logo";
+import { ApiStatus } from "./ApiStatus";
+import { applyTheme, readTheme, type Theme } from "./theme";
+import "./layout.css";
+
+interface NavItem {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+}
+
+const NAV: { heading: string; items: NavItem[] }[] = [
+  {
+    heading: "Monitor",
+    items: [
+      { to: "/", label: "Monitors", icon: Radar },
+      { to: "/incidents", label: "Incidents", icon: Siren },
+    ],
+  },
+  {
+    heading: "Design",
+    items: [
+      { to: "/styleguide", label: "Style guide", icon: Palette },
+      { to: "/brand", label: "Brand", icon: Shapes },
+    ],
+  },
+];
+
+export interface RouteHandle {
+  title: string;
+}
+
+export function Layout() {
+  const title = usePageTitle();
+  const scrolled = useScrolled();
+  const [theme, setTheme] = useState<Theme>(readTheme);
+
+  useEffect(() => applyTheme(theme), [theme]);
+
+  return (
+    <div className="shell">
+      <aside className="sidebar">
+        <NavLink to="/" className="sidebar-logo" aria-label="Lanternly home">
+          <Logo size={24} />
+        </NavLink>
+
+        <nav className="nav" aria-label="Main">
+          {NAV.map((section) => (
+            <div className="nav-section" key={section.heading}>
+              <span className="nav-heading">{section.heading}</span>
+              {section.items.map(({ to, label, icon: Icon }) => (
+                <NavLink key={to} to={to} end={to === "/"} className="nav-link">
+                  <Icon size={16} aria-hidden />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+          ))}
+        </nav>
+
+        <div className="sidebar-footer">
+          <ApiStatus />
+        </div>
+      </aside>
+
+      <div className="main">
+        <header className="topbar" data-scrolled={scrolled}>
+          <div className="topbar-inner">
+            <span className="topbar-title">{title}</span>
+            <button
+              className="btn btn-ghost btn-icon"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            >
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+          </div>
+        </header>
+
+        <main className="content">
+          <Outlet />
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function usePageTitle(): string {
+  const matches = useMatches();
+  const handle = matches.at(-1)?.handle as RouteHandle | undefined;
+  const title = handle?.title ?? "Lanternly";
+
+  useEffect(() => {
+    document.title = title === "Lanternly" ? title : `${title} · Lanternly`;
+  }, [title]);
+
+  return title;
+}
+
+// The top bar turns frosted only once content scrolls underneath it.
+function useScrolled(): boolean {
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 8);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  return scrolled;
+}
