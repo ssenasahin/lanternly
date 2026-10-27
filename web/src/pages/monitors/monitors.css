@@ -461,3 +461,241 @@ fieldset.field {
   font-size: var(--text-xs);
   color: var(--muted);
 }
+
+/* --- API monitors: method beside the URL, header and rule rows, the test panel --- */
+.request-line {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.row-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.row-item {
+  display: grid;
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.row-item > *,
+.row-item .input {
+  min-width: 0;
+}
+
+.row-item .input {
+  width: 100%;
+}
+
+/* Labels show once, above the first row; later rows keep them for screen readers. */
+.row-item + .row-item .field-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.row-item + .row-item .row-action {
+  margin-top: 0;
+}
+
+/* Two by two: four timing fields in a row would be too narrow to read. */
+.form-grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.header-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto auto;
+}
+
+.rule-row {
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+
+/* Lines the icon buttons up with the inputs, below the labels. */
+.row-action {
+  margin-top: 26px;
+}
+
+.row-action.is-on {
+  color: var(--accent);
+}
+
+.textarea {
+  height: auto;
+  min-height: 96px;
+  padding: var(--space-2) var(--space-3);
+  resize: vertical;
+}
+
+.test-panel {
+  display: grid;
+  gap: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px dashed var(--line);
+}
+
+.test-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.test-result {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.test-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.test-error {
+  margin: 0;
+  color: var(--bad);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.test-body summary {
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+
+.test-body .code-block {
+  max-height: 320px;
+  margin-top: var(--space-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Expected against received. Failed rows are tinted; the icon and word carry it too. */
+.rule-table th,
+.rule-table td {
+  padding: var(--space-2) var(--space-3);
+}
+
+.rule-table tr.rule-failed td {
+  background: var(--bad-soft);
+}
+
+.rule-verdict {
+  width: 1px;
+}
+
+.rule-pass {
+  color: var(--good);
+}
+
+.rule-fail {
+  color: var(--bad);
+}
+
+.rule-table .rule-value {
+  min-width: 140px;
+  max-width: 280px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.check-rules summary {
+  cursor: pointer;
+}
+
+.check-rules .table-scroll {
+  margin-top: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.check-rules .rule-table tr:first-child th {
+  border-top: 0;
+}
+
+@media (max-width: 720px) {
+  .request-line {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+
+  /* Each rule takes two lines: path, then the check, value and remove button. */
+  .rule-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  }
+
+  .rule-row > :first-child {
+    grid-column: 1 / -1;
+  }
+
+  .header-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .header-row > :nth-child(2) {
+    grid-row: 2;
+    grid-column: 1 / -1;
+  }
+
+  .rule-no-value {
+    display: none;
+  }
+
+  .form-grid-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Stacked rows need their labels back. */
+  .row-item + .row-item .field-label {
+    position: static;
+    width: auto;
+    height: auto;
+    clip-path: none;
+  }
+
+  .row-item + .row-item .row-action {
+    margin-top: 26px;
+  }
+
+  .row-item + .row-item {
+    padding-top: var(--space-3);
+    border-top: 1px dashed var(--line);
+  }
+}
+
+/* The slowness limit: a dashed line across the response chart. */
+.chart-threshold line {
+  stroke: var(--warn);
+  stroke-dasharray: 4 4;
+  stroke-width: 1;
+}
+
+.chart-threshold text {
+  fill: var(--warn);
+  font-size: 11px;
+}
+
+.failure-card {
+  border-color: var(--bad);
+}
+
+.header-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
+.rules-empty {
+  margin: 0;
+  border-top: 1px solid var(--line);
+  font-size: var(--text-sm);
+}

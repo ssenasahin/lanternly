@@ -3,11 +3,13 @@ import { Link, useParams } from "react-router";
 import { ApiError } from "../../api/client";
 import { badgeStatus, useChecks, useMonitor, type Monitor } from "../../api/monitors";
 import { Alert, EmptyState, SkeletonRows, StatusBadge } from "../../components";
-import { describeSchedule, formatSeconds, formatTime, timeAgo } from "../../lib/format";
+import { describeSchedule, formatMs, formatSeconds, formatTime, timeAgo } from "../../lib/format";
 import { HeartbeatBody } from "../heartbeats/HeartbeatBody";
 import { NotFoundPage } from "../NotFound";
+import { ApiFailure, ApiSettingsCard } from "./ApiDetail";
 import { MonitorIncidents, MonitorStats } from "./MonitorStats";
 import { Actions, Fact } from "./parts";
+import { RuleTable } from "./RuleTable";
 import "../pages.css";
 import "./monitors.css";
 
@@ -84,17 +86,22 @@ export function MonitorDetailPage() {
 function CheckedBody({ monitor }: { monitor: Monitor }) {
   return (
     <>
-      <MonitorStats monitorId={monitor.id} />
+      {monitor.api && <ApiFailure monitor={monitor} />}
+      <MonitorStats monitorId={monitor.id} slowAfterMs={monitor.slowAfterMs} />
       <MonitorIncidents monitorId={monitor.id} />
 
       <dl className="card card-body facts">
         <Fact label="Check every">{formatSeconds(monitor.intervalSec)}</Fact>
         <Fact label="Timeout">{formatSeconds(monitor.timeoutMs / 1000)}</Fact>
         <Fact label="Retries">{monitor.retries === 0 ? "None" : monitor.retries}</Fact>
+        <Fact label="Slow after">
+          {monitor.slowAfterMs === null ? "No limit" : formatMs(monitor.slowAfterMs)}
+        </Fact>
         <Fact label="Last checked">
           {monitor.lastCheckedAt ? timeAgo(monitor.lastCheckedAt) : "Not yet"}
         </Fact>
       </dl>
+      {monitor.api && <ApiSettingsCard api={monitor.api} />}
 
       <RecentChecks id={monitor.id} />
     </>
@@ -111,7 +118,16 @@ function Target({ monitor }: { monitor: Monitor }) {
       </p>
     );
   }
-  if (monitor.type !== "HTTP") return <p className="detail-target mono">ping {monitor.target}</p>;
+  if (monitor.type === "PING") return <p className="detail-target mono">ping {monitor.target}</p>;
+  // An API endpoint is called with its own method and headers; opening it in the
+  // browser would only send a bare GET, so it isn't a link.
+  if (monitor.api) {
+    return (
+      <p className="detail-target mono">
+        {monitor.api.method} {monitor.target}
+      </p>
+    );
+  }
   return (
     <a className="detail-target mono" href={monitor.target} target="_blank" rel="noreferrer">
       {monitor.target} <ExternalLink size={12} aria-hidden />
@@ -164,7 +180,16 @@ function RecentChecks({ id }: { id: string }) {
                   </td>
                   <td className="num mono">{c.responseMs === null ? "–" : `${c.responseMs} ms`}</td>
                   <td className="num mono">{c.statusCode ?? "–"}</td>
-                  <td className="check-error">{c.error ?? ""}</td>
+                  <td className="check-error">
+                    {c.rules ? (
+                      <details className="check-rules">
+                        <summary>{c.error}</summary>
+                        <RuleTable rules={c.rules} />
+                      </details>
+                    ) : (
+                      (c.error ?? "")
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
