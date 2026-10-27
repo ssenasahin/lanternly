@@ -1,4 +1,4 @@
-import { resolvePublicHost } from "@lanternly/db";
+import { resolvePublicHost } from "../network.js";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";

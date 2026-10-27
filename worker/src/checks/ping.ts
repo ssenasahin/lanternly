@@ -1,6 +1,5 @@
-import { UnsafeTargetError } from "@lanternly/db";
+import { failed, UnsafeTargetError, type Attempt, type Resolve } from "@lanternly/db";
 import { execFile } from "node:child_process";
-import { failed, type Attempt, type Resolve } from "./types.js";
 
 // Sends one ICMP echo with the system's ping command, since raw ICMP sockets need
 // root. The command differs per platform: count and timeout flags, and the units.

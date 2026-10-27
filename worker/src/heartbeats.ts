@@ -1,11 +1,11 @@
 import {
   expectedBy,
   lateAfter,
+  type Attempt,
   type HeartbeatPing,
   type NotificationJob,
   type PrismaClient,
 } from "@lanternly/db";
-import type { Attempt } from "./checks/types.js";
 import { formatDuration, formatUtc } from "./notify.js";
 import { recordCheck } from "./record.js";
 
