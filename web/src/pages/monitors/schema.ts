@@ -71,6 +71,8 @@ export const monitorSchema = z
     recordType: z.enum(RECORD_TYPES as [RecordType, ...RecordType[]]),
     dnsExpected: z.string().trim().max(500, "Keep it under 500 characters"),
     dnsResolver: z.string().trim(),
+    // An escalation policy's id, or "" to alert the owner and every channel at once.
+    escalationPolicyId: z.string(),
   })
   .superRefine((form, ctx) => {
     const problem = (path: (string | number)[], message: string) =>
@@ -187,6 +189,7 @@ export const NEW_MONITOR: MonitorForm = {
   timeoutSec: 10,
   retries: 1,
   slowAfterMs: null,
+  escalationPolicyId: "",
   ...NO_API,
   ...NO_DNS,
 };
@@ -198,13 +201,14 @@ export function toForm(monitor: Monitor): MonitorForm {
   const { api, dns } = monitor;
   return {
     name: monitor.name,
-    // Heartbeats have a form of their own and never get here.
-    type: monitor.type === "HEARTBEAT" ? "HTTP" : monitor.type,
+    // Heartbeats and agents have pages of their own and never get here.
+    type: monitor.type === "HEARTBEAT" || monitor.type === "AGENT" ? "HTTP" : monitor.type,
     target: monitor.target,
     intervalSec: monitor.intervalSec,
     timeoutSec: monitor.timeoutMs / 1000,
     retries: monitor.retries,
     slowAfterMs: monitor.slowAfterMs,
+    escalationPolicyId: monitor.escalationPolicy?.id ?? "",
     ...(api
       ? {
           method: api.method,
@@ -259,6 +263,7 @@ export function toInput(form: MonitorForm): MonitorInput {
     timeoutMs: Math.round(form.timeoutSec * 1000),
     retries: form.retries,
     slowAfterMs: form.slowAfterMs,
+    escalationPolicyId: form.escalationPolicyId || null,
     ...(form.type === "API" && { api: toApiSettings(form) }),
     ...(form.type === "DNS" && {
       dns: {

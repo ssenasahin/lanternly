@@ -2,9 +2,9 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import type { Status } from "../components";
 import { api } from "./client";
 
-export type MonitorType = "HTTP" | "API" | "PING" | "TCP" | "DNS" | "HEARTBEAT";
-// The types Lanternly checks itself, as opposed to heartbeats that call in.
-export type CheckedType = Exclude<MonitorType, "HEARTBEAT">;
+export type MonitorType = "HTTP" | "API" | "PING" | "TCP" | "DNS" | "HEARTBEAT" | "AGENT";
+// The types Lanternly checks itself, as opposed to heartbeats and agents that call in.
+export type CheckedType = Exclude<MonitorType, "HEARTBEAT" | "AGENT">;
 export type MonitorStatus = "PENDING" | "UP" | "DOWN" | "DEGRADED" | "PAUSED";
 
 // What a heartbeat expects, as monitor lists carry it. The ping URL is not here: it
@@ -78,6 +78,15 @@ export interface Monitor {
   api: ApiSettings | null;
   // Set for DNS monitors only.
   dns: DnsSettings | null;
+  // Set for server agents only: the host as its last report gave it.
+  agent: {
+    hostname: string | null;
+    platform: string | null;
+    lastSeenAt: string | null;
+    keyPrefix: string;
+  } | null;
+  // Who hears about an outage in order; null alerts the owner and every channel.
+  escalationPolicy: { id: string; name: string } | null;
 }
 
 // One hour of the last 24, oldest first, as the list's strip shows it.
@@ -97,6 +106,7 @@ export type MonitorInput = Pick<
   type: CheckedType;
   api?: ApiSettings;
   dns?: DnsSettings;
+  escalationPolicyId?: string | null;
 };
 
 // What "Test now" found: the check's verdict plus what the API sent back.
@@ -151,6 +161,7 @@ export interface Incident {
   startedAt: string;
   resolvedAt: string | null;
   cause: string | null;
+  acknowledgedAt: string | null;
   monitor: Pick<Monitor, "id" | "name" | "type" | "target">;
 }
 

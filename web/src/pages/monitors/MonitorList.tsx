@@ -10,6 +10,7 @@ import {
   Radio,
   Search,
   SearchX,
+  Server,
 } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
@@ -36,6 +37,9 @@ import "./monitors.css";
 
 const addButtons = (
   <div className="row">
+    <Link to="/agents/new" className="btn">
+      <Server size={16} aria-hidden /> Add server
+    </Link>
     <Link to="/heartbeats/new" className="btn">
       <HeartPulse size={16} aria-hidden /> Add heartbeat
     </Link>
@@ -224,6 +228,11 @@ function hourSlots(slots: HourSlot[]): StripSlot[] {
 // The second line of a row: what is checked, or what a heartbeat expects.
 function subtitle(m: ListedMonitor): string {
   if (m.heartbeat) return `heartbeat, ${describeSchedule(m.heartbeat)}`;
+  if (m.agent) {
+    return m.agent.hostname
+      ? `server agent on ${m.agent.hostname}`
+      : "server agent, waiting for its first report";
+  }
   if (m.dns) return `${m.dns.recordType} ${m.target}`;
   return m.api ? `${m.api.method} ${m.target}` : m.target;
 }
@@ -235,6 +244,7 @@ const TYPE_ICONS = {
   TCP: Plug,
   DNS: Network,
   HEARTBEAT: HeartPulse,
+  AGENT: Server,
 };
 
 function MonitorRow({ monitor: m }: { monitor: ListedMonitor }) {
@@ -264,6 +274,13 @@ function MonitorRow({ monitor: m }: { monitor: ListedMonitor }) {
             <>
               <span>grace {formatSeconds(m.heartbeat.graceSec)}</span>
               <span>{lastPing ? `pinged ${timeAgo(lastPing)}` : "no ping yet"}</span>
+            </>
+          ) : m.agent ? (
+            <>
+              <span>reports every 1 min</span>
+              <span>
+                {m.agent.lastSeenAt ? `reported ${timeAgo(m.agent.lastSeenAt)}` : "no report yet"}
+              </span>
             </>
           ) : (
             <>
