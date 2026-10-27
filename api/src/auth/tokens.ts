@@ -44,6 +44,31 @@ export async function verifyAccessToken(token: string, secret: string): Promise<
   };
 }
 
+// Issued after a correct password when two-factor is on. It proves only that the
+// first step passed, for five minutes, and is accepted by nothing but the second step.
+const CHALLENGE_AUDIENCE = "lanternly-2fa";
+
+export async function signChallengeToken(userId: string, secret: string): Promise<string> {
+  return new SignJWT({})
+    .setProtectedHeader({ alg: "HS256" })
+    .setSubject(userId)
+    .setIssuer(ISSUER)
+    .setAudience(CHALLENGE_AUDIENCE)
+    .setIssuedAt()
+    .setExpirationTime("5m")
+    .sign(new TextEncoder().encode(secret));
+}
+
+export async function verifyChallengeToken(token: string, secret: string): Promise<string> {
+  const { payload } = await jwtVerify(token, new TextEncoder().encode(secret), {
+    issuer: ISSUER,
+    audience: CHALLENGE_AUDIENCE,
+    algorithms: ["HS256"],
+  });
+  if (typeof payload.sub !== "string") throw new Error("Challenge token is missing its subject");
+  return payload.sub;
+}
+
 // A refresh token is "<session id>.<secret>". The id finds the session row; only
 // a hash of the secret is stored, so a database leak yields no usable tokens.
 export function newRefreshSecret(): { secret: string; hash: string } {
