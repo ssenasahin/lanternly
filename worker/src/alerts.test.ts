@@ -126,6 +126,15 @@ describe("without an escalation policy", () => {
       verifyAck(encryptionKey, incident.id, `u:${owner.id}`, url.searchParams.get("sig")!),
     ).toBe(true);
   });
+
+  it("sends nothing for a suspended account", async () => {
+    const { incident, owner } = await setup();
+    await prisma.user.update({ where: { id: owner.id }, data: { suspendedAt: new Date() } });
+    await sendNotification({ kind: "down", incidentId: incident.id }, deps);
+    expect(mails).toEqual([]);
+    expect(posts).toEqual([]);
+    expect(await timeline(incident.id)).toEqual(["OPENED"]);
+  });
 });
 
 describe("with an escalation policy", () => {

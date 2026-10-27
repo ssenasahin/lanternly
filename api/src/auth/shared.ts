@@ -3,6 +3,7 @@ import type { CookieOptions, Request, Response } from "express";
 import { rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import type { Env } from "../env.js";
+import { HttpError } from "../http.js";
 import { afterFailedSignIn } from "./lockout.js";
 import { createSession, type ClientInfo } from "./sessions.js";
 import { signAccessToken } from "./tokens.js";
@@ -44,6 +45,8 @@ export function clientOf(req: Request): ClientInfo {
   return { ip: req.ip, userAgent: req.get("user-agent") };
 }
 
+export const SUSPENDED = "This account is suspended. Contact your Lanternly administrator.";
+
 // Creates a session, sets its refresh cookie and returns the response body.
 export async function issueSession(
   { env, prisma }: AuthDeps,
@@ -52,6 +55,8 @@ export async function issueSession(
   user: User,
   mfa: boolean,
 ) {
+  // Every way in passes through here, so a suspended account can't slip past.
+  if (user.suspendedAt) throw new HttpError(403, SUSPENDED);
   const { session, refreshToken } = await createSession(prisma, user.id, clientOf(req), mfa);
   res.cookie(REFRESH_COOKIE, refreshToken, refreshCookieOptions(session.expiresAt));
   const accessToken = await signAccessToken(

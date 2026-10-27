@@ -46,7 +46,7 @@ const incidentInclude = {
       name: true,
       target: true,
       ownerId: true,
-      owner: { select: { email: true } },
+      owner: { select: { email: true, suspendedAt: true } },
       escalationPolicy: { select: { name: true, steps: true, teamId: true } },
     },
   },
@@ -225,13 +225,14 @@ export async function sendNotification(job: NotificationJob, deps: AlertDeps) {
             name: true,
             target: true,
             ownerId: true,
-            owner: { select: { email: true } },
+            owner: { select: { email: true, suspendedAt: true } },
           },
         },
       },
     });
-    // Deleted with its monitor, or rolled up into hourly totals already.
-    if (!check) return;
+    // Deleted with its monitor, or rolled up into hourly totals already. A suspended
+    // account hears nothing until an admin lets it back in.
+    if (!check || check.monitor.owner.suspendedAt) return;
     const { monitor } = check;
     const mail = slowEmail(check, deps.webOrigin);
     const message: AlertMessage = {
@@ -257,7 +258,7 @@ export async function sendNotification(job: NotificationJob, deps: AlertDeps) {
 
   const incident = await loadIncident(prisma, job.incidentId);
   // The monitor (and with it the incident) was deleted before the alert went out.
-  if (!incident) return;
+  if (!incident || incident.monitor.owner.suspendedAt) return;
   const { monitor } = incident;
   const policy = monitor.escalationPolicy;
   const steps = readSteps(policy?.steps);
@@ -312,6 +313,7 @@ export async function escalate(job: EscalationJob, deps: AlertDeps) {
   const { prisma } = deps;
   const incident = await loadIncident(prisma, job.incidentId);
   if (!incident || incident.resolvedAt || incident.acknowledgedAt) return;
+  if (incident.monitor.owner.suspendedAt) return;
   const policy = incident.monitor.escalationPolicy;
   const steps = readSteps(policy?.steps);
   const step = steps[job.step];

@@ -15,6 +15,7 @@ import {
   emailField,
   INVALID_CREDENTIALS,
   issueSession,
+  SUSPENDED,
   publicUser,
   recordFailedSignIn,
   REFRESH_COOKIE,
@@ -70,6 +71,9 @@ export function authRouter(deps: AuthDeps) {
       await recordFailedSignIn(prisma, user.id);
       throw new HttpError(401, INVALID_CREDENTIALS);
     }
+    // Said only after the right password, so it reveals nothing to a guesser, and
+    // before two-factor, so the user isn't asked for a code that leads nowhere.
+    if (user.suspendedAt) throw new HttpError(403, SUSPENDED);
 
     // The password was right, but with two-factor on it only earns a short-lived
     // ticket to the second step; no session exists until a code is checked.
@@ -96,6 +100,11 @@ export function authRouter(deps: AuthDeps) {
     }
 
     const user = await prisma.user.findUniqueOrThrow({ where: { id: result.session.userId } });
+    if (user.suspendedAt) {
+      await revokeSession(prisma, result.session.id);
+      res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
+      throw new HttpError(403, SUSPENDED);
+    }
     res.cookie(REFRESH_COOKIE, result.refreshToken, refreshCookieOptions(result.session.expiresAt));
     const accessToken = await signAccessToken(
       { userId: user.id, sessionId: result.session.id, role: user.role, mfa: result.session.mfa },
