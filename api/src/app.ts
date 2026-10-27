@@ -14,6 +14,7 @@ import { authRouter } from "./auth/routes.js";
 import type { Env } from "./env.js";
 import { healthRouter } from "./health.js";
 import { errorHandler } from "./http.js";
+import { incidentRouter } from "./incidents/routes.js";
 import { monitorRouter } from "./monitors/routes.js";
 import { rejectCrossSiteRequests } from "./origin.js";
 
@@ -58,6 +59,7 @@ export function createApp({ env, prisma, mailer, scheduler, checkDatabase, resol
     "/api/monitors",
     monitorRouter({ prisma, scheduler, jwtSecret: env.JWT_SECRET, resolveHost }),
   );
+  app.use("/api/incidents", incidentRouter(prisma, env.JWT_SECRET));
   app.use("/api/admin", adminRouter(prisma, env.JWT_SECRET));
 
   app.use((_req, res) => {
