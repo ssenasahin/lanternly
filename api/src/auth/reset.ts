@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { emailLayout, escapeHtml } from "@lanternly/db";
+import { emailLayout, escapeHtml, type PrismaClient } from "@lanternly/db";
 import { Router } from "express";
 import { z } from "zod";
 import { HttpError, validate } from "../http.js";
@@ -8,7 +8,26 @@ import { authLimiter, emailField, type AuthDeps } from "./shared.js";
 import { sha256 } from "./tokens.js";
 
 const RESET_TTL_MS = 30 * 60 * 1000;
+// A link an admin sends may sit in the inbox until the person sees it.
+export const ADMIN_RESET_TTL_MS = 24 * 60 * 60 * 1000;
 const LINK_INVALID = "This reset link has expired or was already used. Request a new one.";
+
+// A new link replaces any older one still waiting in the inbox. Only its hash is kept.
+export async function createResetLink(
+  prisma: PrismaClient,
+  webOrigin: string,
+  userId: string,
+  ttlMs = RESET_TTL_MS,
+): Promise<string> {
+  const token = randomBytes(32).toString("base64url");
+  await prisma.$transaction([
+    prisma.passwordResetToken.deleteMany({ where: { userId, usedAt: null } }),
+    prisma.passwordResetToken.create({
+      data: { userId, tokenHash: sha256(token), expiresAt: new Date(Date.now() + ttlMs) },
+    }),
+  ]);
+  return `${webOrigin}/reset-password?token=${token}`;
+}
 
 export function resetRoutes({ env, prisma, mailer }: AuthDeps) {
   const router = Router();
@@ -19,19 +38,7 @@ export function resetRoutes({ env, prisma, mailer }: AuthDeps) {
     const user = await prisma.user.findUnique({ where: { email } });
 
     if (user) {
-      const token = randomBytes(32).toString("base64url");
-      // A new link replaces any older one still waiting in the inbox.
-      await prisma.$transaction([
-        prisma.passwordResetToken.deleteMany({ where: { userId: user.id, usedAt: null } }),
-        prisma.passwordResetToken.create({
-          data: {
-            userId: user.id,
-            tokenHash: sha256(token),
-            expiresAt: new Date(Date.now() + RESET_TTL_MS),
-          },
-        }),
-      ]);
-      const link = `${env.WEB_ORIGIN}/reset-password?token=${token}`;
+      const link = await createResetLink(prisma, env.WEB_ORIGIN, user.id);
       // Sent without awaiting, so a slow mail server can't make known addresses
       // answer measurably slower than unknown ones.
       void mailer.send(resetEmail(user.email, link)).catch((error) => {
@@ -91,16 +98,21 @@ export function resetRoutes({ env, prisma, mailer }: AuthDeps) {
   return router;
 }
 
-function resetEmail(to: string, link: string) {
+// Asked for by the person, or sent by an admin helping them back in.
+export function resetEmail(to: string, link: string, byAdmin = false) {
+  const why = byAdmin
+    ? `A Lanternly administrator sent you a link to set a new password for ${to}.`
+    : `Someone asked to reset the password for ${to}.`;
+  const lasts = byAdmin ? "24 hours" : "30 minutes";
   return {
     to,
     subject: "Reset your Lanternly password",
-    text: `Someone asked to reset the password for ${to}.\n\nOpen this link within 30 minutes to choose a new one:\n${link}\n\nIf it wasn't you, ignore this email; your password stays the same.`,
+    text: `${why}\n\nOpen this link within ${lasts} to choose a new one:\n${link}\n\nIf you didn't expect it, ignore this email; your password stays the same.`,
     html: emailLayout(
       "Reset your password",
-      `<p style="margin:0 0 24px;line-height:1.6;color:#c9cdd2">Someone asked to reset the password for ${escapeHtml(to)}. The link works once, for 30 minutes.</p>
+      `<p style="margin:0 0 24px;line-height:1.6;color:#c9cdd2">${escapeHtml(why)} The link works once, for ${lasts}.</p>
       <p style="margin:0 0 24px"><a href="${escapeHtml(link)}" style="display:inline-block;padding:10px 18px;border-radius:8px;background:#f5a524;color:#1b1204;font-weight:600;text-decoration:none">Choose a new password</a></p>
-      <p style="margin:0;line-height:1.6;color:#8b939d">If it wasn't you, ignore this email; your password stays the same.</p>`,
+      <p style="margin:0;line-height:1.6;color:#8b939d">If you didn't expect it, ignore this email; your password stays the same.</p>`,
     ),
   };
 }
