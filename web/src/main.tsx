@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { applyTheme, readTheme } from "./app/theme";
+import { AuthProvider } from "./auth/AuthProvider";
 import "./styles/index.css";
 
 // Apply the saved theme before the first paint, so a light-theme user never sees a dark flash.
@@ -24,7 +25,9 @@ if (!root) throw new Error("index.html is missing #root");
 createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <AuthProvider>
+        <App />
+      </AuthProvider>
     </QueryClientProvider>
   </StrictMode>,
 );

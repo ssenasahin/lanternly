@@ -1,6 +1,18 @@
-import { Moon, Palette, Radar, Shapes, Siren, Sun, type LucideIcon } from "lucide-react";
+import {
+  LogOut,
+  Moon,
+  Palette,
+  Radar,
+  Shapes,
+  ShieldCheck,
+  Siren,
+  Sun,
+  type LucideIcon,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useMatches } from "react-router";
+import { useAuth, useUser } from "../auth/AuthProvider";
+import { SECURITY_PATH } from "../auth/guards";
 import { Logo } from "../brand/Logo";
 import { ApiStatus } from "./ApiStatus";
 import { applyTheme, readTheme, type Theme } from "./theme";
@@ -19,6 +31,10 @@ const NAV: { heading: string; items: NavItem[] }[] = [
       { to: "/", label: "Monitors", icon: Radar },
       { to: "/incidents", label: "Incidents", icon: Siren },
     ],
+  },
+  {
+    heading: "Account",
+    items: [{ to: SECURITY_PATH, label: "Security", icon: ShieldCheck }],
   },
   {
     heading: "Design",
@@ -63,6 +79,7 @@ export function Layout() {
 
         <div className="sidebar-footer">
           <ApiStatus />
+          <UserMenu />
         </div>
       </aside>
 
@@ -88,7 +105,7 @@ export function Layout() {
   );
 }
 
-function usePageTitle(): string {
+export function usePageTitle(): string {
   const matches = useMatches();
   const handle = matches.at(-1)?.handle as RouteHandle | undefined;
   const title = handle?.title ?? "Lanternly";
@@ -98,6 +115,26 @@ function usePageTitle(): string {
   }, [title]);
 
   return title;
+}
+
+function UserMenu() {
+  const user = useUser();
+  const { signOut } = useAuth();
+  return (
+    <div className="user-menu">
+      <span className="user-email" title={user.email}>
+        {user.email}
+      </span>
+      <button
+        className="btn btn-ghost btn-icon btn-sm"
+        onClick={() => void signOut()}
+        aria-label="Sign out"
+        title="Sign out"
+      >
+        <LogOut size={15} />
+      </button>
+    </div>
+  );
 }
 
 // The top bar turns frosted only once content scrolls underneath it.
