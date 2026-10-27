@@ -11,6 +11,7 @@ function appWith(checkDatabase: () => Promise<void>) {
     prisma: {} as PrismaClient,
     mailer: { send: async () => {} },
     scheduler: { sync: async () => {}, remove: async () => {} },
+    pings: { add: async () => {} },
     checkDatabase,
   });
 }

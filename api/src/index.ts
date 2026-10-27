@@ -1,10 +1,13 @@
 import {
   CHECKS_QUEUE,
+  HEARTBEATS_QUEUE,
   prisma,
+  queuePings,
   queueScheduler,
   redisConnection,
   smtpMailer,
   type CheckJob,
+  type PingJob,
 } from "@lanternly/db";
 import { Queue } from "bullmq";
 import { createApp } from "./app.js";
@@ -22,7 +25,14 @@ const redis = redisConnection(env.REDIS_URL, { failFast: true });
 // Without a listener, a lost Redis connection would crash the process.
 redis.on("error", (err) => console.error("redis:", err.message));
 const checks = new Queue<CheckJob>(CHECKS_QUEUE, { connection: redis });
-const app = createApp({ env, prisma, mailer, scheduler: queueScheduler(checks) });
+const heartbeats = new Queue<PingJob>(HEARTBEATS_QUEUE, { connection: redis });
+const app = createApp({
+  env,
+  prisma,
+  mailer,
+  scheduler: queueScheduler(checks),
+  pings: queuePings(heartbeats),
+});
 
 const server = app.listen(env.API_PORT, () => {
   console.log(`lanternly api listening on http://localhost:${env.API_PORT}`);
@@ -31,9 +41,10 @@ const server = app.listen(env.API_PORT, () => {
 // Finish in-flight requests and close database connections before exiting.
 function shutdown() {
   server.close(() => {
-    void Promise.all([checks.close().then(() => redis.quit()), prisma.$disconnect()]).then(() =>
-      process.exit(0),
-    );
+    void Promise.all([
+      Promise.all([checks.close(), heartbeats.close()]).then(() => redis.quit()),
+      prisma.$disconnect(),
+    ]).then(() => process.exit(0));
   });
 }
 process.on("SIGINT", shutdown);

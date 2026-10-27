@@ -7,6 +7,9 @@ const schema = z.object({
   API_PORT: z.coerce.number().int().positive().default(4000),
   DATABASE_URL: z.url(),
   WEB_ORIGIN: z.url(),
+  // The API's address as cron jobs see it, for heartbeat ping URLs. Without it they
+  // point at localhost, which is right in development only.
+  PUBLIC_API_URL: z.url().optional(),
   // Where the check schedule lives; the worker reads the same queues.
   REDIS_URL: z.url().default("redis://127.0.0.1:6379"),
   // Signs access tokens. Anyone holding it can mint a token for any user.

@@ -1,4 +1,12 @@
-import { PrismaClient, type Mail, type Mailer, type MonitorScheduler } from "@lanternly/db";
+import {
+  isScheduled,
+  PrismaClient,
+  type Mail,
+  type Mailer,
+  type MonitorScheduler,
+  type PingJob,
+  type PingQueue,
+} from "@lanternly/db";
 import { generate } from "otplib";
 import request, { type Response } from "supertest";
 import { createApp } from "../app.js";
@@ -34,6 +42,7 @@ const memoryMailer: Mailer = {
 export async function resetDatabase(): Promise<void> {
   outbox.length = 0;
   schedule.clear();
+  pingJobs.length = 0;
   await prisma.$executeRawUnsafe("TRUNCATE TABLE users CASCADE");
 }
 
@@ -42,10 +51,18 @@ export async function resetDatabase(): Promise<void> {
 export const schedule = new Map<string, number | null>();
 const memoryScheduler: MonitorScheduler = {
   async sync(monitor) {
-    schedule.set(monitor.id, monitor.isActive ? monitor.intervalSec : null);
+    schedule.set(monitor.id, isScheduled(monitor) ? monitor.intervalSec : null);
   },
   async remove(monitorId) {
     schedule.set(monitorId, null);
+  },
+};
+
+// Pings handed to the worker, in order, instead of going to Redis.
+export const pingJobs: PingJob[] = [];
+const memoryPings: PingQueue = {
+  async add(job) {
+    pingJobs.push(job);
   },
 };
 
@@ -71,6 +88,7 @@ export function makeApp(env: Partial<Env> = {}) {
     prisma,
     mailer: memoryMailer,
     scheduler: memoryScheduler,
+    pings: memoryPings,
     resolveHost: fakeResolve,
   });
 }
