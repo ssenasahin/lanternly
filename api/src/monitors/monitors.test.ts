@@ -1,7 +1,7 @@
 import request from "supertest";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { makeApp, prisma, resetDatabase, schedule, signUp } from "../test/helpers.js";
-import { MAX_MONITORS_PER_USER } from "./routes.js";
+import { limitsOf } from "../plans.js";
 
 beforeEach(resetDatabase);
 afterAll(() => prisma.$disconnect());
@@ -71,11 +71,12 @@ describe("creating monitors", () => {
     expect(await prisma.monitor.count()).toBe(0);
   });
 
-  it(`stops at ${MAX_MONITORS_PER_USER} monitors`, async () => {
+  it("stops at the plan's monitor limit", async () => {
     const { app, as } = await signedIn();
     const owner = await prisma.user.findFirstOrThrow();
+    const { maxMonitors } = await limitsOf(prisma, owner.id);
     await prisma.monitor.createMany({
-      data: Array.from({ length: MAX_MONITORS_PER_USER }, (_, i) => ({
+      data: Array.from({ length: maxMonitors }, (_, i) => ({
         ownerId: owner.id,
         name: `Monitor ${i}`,
         type: "HTTP" as const,

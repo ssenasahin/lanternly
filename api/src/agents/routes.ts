@@ -1,12 +1,13 @@
 import { type AgentReports, type MonitorScheduler, type PrismaClient } from "@lanternly/db";
 import { Router, type RequestHandler } from "express";
-import { rateLimit } from "express-rate-limit";
+import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { authOf } from "../auth/middleware.js";
 import { sha256 } from "../auth/tokens.js";
 import { HttpError, validate } from "../http.js";
-import { MAX_MONITORS_PER_USER } from "../monitors/routes.js";
+import { SUSPENDED } from "../auth/shared.js";
+import { assertRoomFor } from "../plans.js";
 
 const KEY_PREFIX = "lnly_ag_";
 
@@ -89,10 +90,7 @@ export function agentRouter({
   router.post("/", async (req, res) => {
     const { userId } = authOf(req);
     const { name } = validate(createSchema, req.body);
-    const count = await prisma.monitor.count({ where: { ownerId: userId } });
-    if (count >= MAX_MONITORS_PER_USER) {
-      throw new HttpError(403, `You can have up to ${MAX_MONITORS_PER_USER} monitors`);
-    }
+    await assertRoomFor(prisma, userId, "monitors");
     const { key, keyHash, keyPrefix } = newKey();
     const monitor = await prisma.monitor.create({
       data: {
@@ -158,7 +156,7 @@ export function agentReportRouter({ prisma, reports }: Pick<AgentDeps, "prisma" 
       limit: 30,
       standardHeaders: "draft-8",
       legacyHeaders: false,
-      keyGenerator: (req) => req.get("authorization") ?? req.ip ?? "",
+      keyGenerator: (req) => req.get("authorization") ?? ipKeyGenerator(req.ip ?? ""),
       message: { error: "Too many reports. An agent sends one a minute." },
     }),
   );
@@ -167,9 +165,13 @@ export function agentReportRouter({ prisma, reports }: Pick<AgentDeps, "prisma" 
     const header = req.get("authorization");
     const key = header?.startsWith("Bearer ") ? header.slice(7) : "";
     const agent = key.startsWith(KEY_PREFIX)
-      ? await prisma.agent.findUnique({ where: { keyHash: sha256(key) } })
+      ? await prisma.agent.findUnique({
+          where: { keyHash: sha256(key) },
+          include: { monitor: { select: { owner: { select: { suspendedAt: true } } } } },
+        })
       : null;
     if (!agent) throw new HttpError(401, "Unknown agent key");
+    if (agent.monitor.owner.suspendedAt) throw new HttpError(403, SUSPENDED);
 
     const { host, samples } = validate(reportSchema, req.body);
     // Samples from the future, or older than the buffer could hold, are clock trouble.

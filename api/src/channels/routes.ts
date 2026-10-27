@@ -19,8 +19,7 @@ import { z } from "zod";
 import { authOf } from "../auth/middleware.js";
 import { HttpError, validate } from "../http.js";
 import { checkTarget } from "../monitors/target.js";
-
-export const MAX_CHANNELS_PER_USER = 20;
+import { assertRoomFor } from "../plans.js";
 
 // A secret left out (null) on an edit keeps the stored one, as with API headers.
 const keep = z.string().trim().nullable().optional();
@@ -156,10 +155,7 @@ export function channelRouter({
   router.post("/", async (req, res) => {
     const { userId } = authOf(req);
     const input = validate(createSchema, req.body);
-    const count = await prisma.notificationChannel.count({ where: { ownerId: userId } });
-    if (count >= MAX_CHANNELS_PER_USER) {
-      throw new HttpError(403, `You can have up to ${MAX_CHANNELS_PER_USER} channels`);
-    }
+    await assertRoomFor(prisma, userId, "channels");
     const config = await settle(input.type, input.settings);
     const channel = await prisma.notificationChannel.create({
       data: {

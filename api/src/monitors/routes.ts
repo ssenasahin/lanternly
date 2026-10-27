@@ -26,9 +26,7 @@ import {
 import { dnsFields, dnsSettings, presentDns } from "./dns-settings.js";
 import { lastDayStrips, RANGES, rangeStats, uptimeWindows, type Range } from "./stats.js";
 import { checkTarget } from "./target.js";
-
-// Until the admin panel can set limits per plan, everyone gets the same cap.
-export const MAX_MONITORS_PER_USER = 50;
+import { assertInterval, assertRoomFor, limitsOf } from "../plans.js";
 
 const fields = {
   name: z.string().trim().min(1, "Give the monitor a name").max(100),
@@ -251,10 +249,7 @@ export function monitorRouter({
     assertTiming(input);
     await checkPolicy(input.escalationPolicyId, userId);
 
-    const count = await prisma.monitor.count({ where: { ownerId: userId } });
-    if (count >= MAX_MONITORS_PER_USER) {
-      throw new HttpError(403, `You can have up to ${MAX_MONITORS_PER_USER} monitors`);
-    }
+    assertInterval(await assertRoomFor(prisma, userId, "monitors"), input.intervalSec);
 
     const target = await checkTarget(input.type, input.target, resolveHost);
     let settings = {};
@@ -369,6 +364,9 @@ export function monitorRouter({
 
     const next = { ...current, ...input, type: input.type ?? current.type };
     assertTiming(next);
+    if (input.intervalSec !== undefined) {
+      assertInterval(await limitsOf(prisma, userId), input.intervalSec);
+    }
 
     const data: Prisma.MonitorUpdateInput = { ...input };
     if (escalationPolicyId !== undefined) {

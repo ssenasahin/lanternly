@@ -12,7 +12,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { authOf, requireAuth } from "../auth/middleware.js";
 import { HttpError, validate } from "../http.js";
-import { MAX_MONITORS_PER_USER } from "../monitors/routes.js";
+import { assertRoomFor } from "../plans.js";
 
 const scheduleFields = {
   // A fixed period, from one minute to a week...
@@ -155,10 +155,7 @@ export function heartbeatRouter({ prisma, jwtSecret, publicUrl }: HeartbeatDeps)
     const schedule = checkSchedule(input);
 
     // Heartbeats are monitors, and count towards the same limit.
-    const count = await prisma.monitor.count({ where: { ownerId: userId } });
-    if (count >= MAX_MONITORS_PER_USER) {
-      throw new HttpError(403, `You can have up to ${MAX_MONITORS_PER_USER} monitors`);
-    }
+    await assertRoomFor(prisma, userId, "monitors");
 
     const row = await prisma.monitor.create({
       data: {
