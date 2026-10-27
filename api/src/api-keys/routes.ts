@@ -5,9 +5,10 @@ import { z } from "zod";
 import { authOf } from "../auth/middleware.js";
 import { sha256 } from "../auth/tokens.js";
 import { HttpError, validate } from "../http.js";
+import { SUSPENDED } from "../auth/shared.js";
+import { assertRoomFor } from "../plans.js";
 
 const KEY_PREFIX = "lnly_sk_";
-export const MAX_ACTIVE_KEYS = 10;
 // Writing last_used_at on every request would turn reads into writes; once a minute
 // is precise enough to tell a key in use from a forgotten one.
 const TOUCH_EVERY_MS = 60_000;
@@ -32,8 +33,12 @@ export function requireApiKey(prisma: PrismaClient): RequestHandler {
     if (!key.startsWith(KEY_PREFIX)) {
       throw new HttpError(401, "Send an API key: Authorization: Bearer lnly_sk_…");
     }
-    const found = await prisma.apiKey.findUnique({ where: { keyHash: sha256(key) } });
+    const found = await prisma.apiKey.findUnique({
+      where: { keyHash: sha256(key) },
+      include: { owner: { select: { suspendedAt: true } } },
+    });
     if (!found || found.revokedAt) throw new HttpError(401, "This API key is unknown or revoked");
+    if (found.owner.suspendedAt) throw new HttpError(403, SUSPENDED);
 
     const now = new Date();
     if (!found.lastUsedAt || now.getTime() - found.lastUsedAt.getTime() > TOUCH_EVERY_MS) {
@@ -64,13 +69,7 @@ export function apiKeyRouter(prisma: PrismaClient, authenticate: RequestHandler)
       z.object({ name: z.string().trim().min(1, "Name the key after what uses it").max(100) }),
       req.body,
     );
-    const active = await prisma.apiKey.count({ where: { ownerId: userId, revokedAt: null } });
-    if (active >= MAX_ACTIVE_KEYS) {
-      throw new HttpError(
-        403,
-        `You can have up to ${MAX_ACTIVE_KEYS} active keys. Revoke one you no longer use.`,
-      );
-    }
+    await assertRoomFor(prisma, userId, "apiKeys");
     const key = `${KEY_PREFIX}${randomBytes(32).toString("base64url")}`;
     const created = await prisma.apiKey.create({
       data: {
