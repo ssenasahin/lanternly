@@ -17,13 +17,16 @@ COPY . .
 RUN npm run build
 
 # The api, the worker and the migration step. The Prisma CLI stays in the image
-# because `migrate` applies the migrations with it on every deploy.
-FROM node:24-trixie-slim AS app
+# because `migrate` applies the migrations with it on every deploy. Distroless
+# carries Node, glibc and OpenSSL and nothing else: no shell, no package manager,
+# no npm, so none of their unpatched advisories ship with the app. It runs as an
+# unprivileged user (65532) by default.
+FROM gcr.io/distroless/nodejs24-debian13:nonroot AS app
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
-ENV NODE_ENV=production
+ENV NODE_ENV=production PATH=/nodejs/bin:$PATH
+# Compose names the program to run, `node` included, as on any other image.
+ENTRYPOINT []
 COPY --from=build /app /app
-USER node
 
 # The static dashboard behind Caddy, which also proxies /api to the api container
 # so the browser sees one origin and the refresh cookie stays first-party.
