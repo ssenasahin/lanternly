@@ -1,5 +1,5 @@
 # One build for the whole workspace; deployments/compose.yml runs its stages as
-# the api, the worker, the migration step and the web server.
+# the database, the api, the worker, the migration step and the web server.
 
 FROM node:24-trixie-slim AS build
 WORKDIR /app
@@ -39,6 +39,12 @@ RUN go mod init lanternly/caddy \
     github.com/go-chi/chi/v5@v5.4.0 github.com/go-jose/go-jose/v4@v4.1.6 \
   && go mod tidy \
   && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /caddy .
+
+# PostgreSQL started as its own user from the first instruction, so the image
+# needs no gosu to drop root; gosu is removed because it is built with an old Go.
+FROM postgres:16-alpine AS postgres
+RUN apk upgrade --no-cache && rm /usr/local/bin/gosu
+USER postgres
 
 # The static dashboard behind Caddy, which also proxies /api to the api container
 # so the browser sees one origin and the refresh cookie stays first-party.
