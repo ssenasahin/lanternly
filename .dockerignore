@@ -5,8 +5,9 @@
 **/coverage
 .git
 .github
-.env
-.env.*
+# Secrets in any folder, deployments/.env above all, must never end up in an image.
+**/.env
+**/.env.*
 docs
 .claude
 CLAUDE.md
