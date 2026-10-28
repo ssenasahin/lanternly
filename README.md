@@ -263,7 +263,7 @@ certificate on its own. Keeping the dashboard and the API on one origin keeps th
 first-party (`SameSite=Strict`, `Secure`, `HttpOnly`).
 
 ```sh
-cp deployments/.env.example deployments/.env   # domain, database password, secrets, SMTP
+cp deployments/.env.example deployments/.env   # domain, database and Redis passwords, secrets, SMTP
 docker compose -f deployments/compose.yml --env-file deployments/.env up -d --build
 docker compose -f deployments/compose.yml --env-file deployments/.env exec api \
   node api/dist/cli/create-admin.js
@@ -281,19 +281,6 @@ $ curl -s https://<your-domain>/api/health
 $ curl -s https://<your-domain>/ping/<heartbeat-token>
 OK
 ```
-
-## Roadmap
-
-| Stage | Work                                                                          |
-| ----- | ----------------------------------------------------------------------------- |
-| Done  | Secure sign-in with two-factor, lockout and session management                |
-| Done  | HTTP, API, TCP, DNS and ping monitors; heartbeats; server agent               |
-| Done  | Incidents, Slack, Telegram and webhook alerts, escalation and acknowledgement |
-| Done  | Public REST API with keys and an OpenAPI reference                            |
-| Done  | Admin panel: users, plans and limits, system health, audit log                |
-| Next  | Checks from more than one region, so a local network problem isn't an outage  |
-| Next  | A public status page per account                                              |
-| Next  | Monthly SLA reports                                                           |
 
 ## License
 
