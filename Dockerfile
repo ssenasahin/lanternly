@@ -28,8 +28,22 @@ ENV NODE_ENV=production PATH=/nodejs/bin:$PATH
 ENTRYPOINT []
 COPY --from=build /app /app
 
+# The official Caddy image is built with an older Go than the latest security
+# release, so build the same Caddy version here with current Go and dependencies.
+# Raise these versions whenever an image scan reports them.
+FROM golang:1.27-alpine AS caddy
+WORKDIR /src
+COPY deployments/caddy/main.go .
+RUN go mod init lanternly/caddy \
+  && go get github.com/caddyserver/caddy/v2@v2.11.7 golang.org/x/net@v0.62.0 \
+    github.com/go-chi/chi/v5@v5.4.0 github.com/go-jose/go-jose/v4@v4.1.6 \
+  && go mod tidy \
+  && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /caddy .
+
 # The static dashboard behind Caddy, which also proxies /api to the api container
 # so the browser sees one origin and the refresh cookie stays first-party.
-FROM caddy:2-alpine AS web
+FROM caddy:2.11-alpine AS web
+RUN apk upgrade --no-cache
+COPY --from=caddy /caddy /usr/bin/caddy
 COPY --from=build /app/web/dist /srv
 COPY deployments/Caddyfile /etc/caddy/Caddyfile
