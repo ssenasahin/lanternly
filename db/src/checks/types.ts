@@ -1,4 +1,4 @@
-import type { CheckStatus } from "@prisma/client";
+import type { CheckStatus } from "../generated/prisma/client.js";
 import type { RuleResult } from "./rules.js";
 
 // What one attempt found. Shaped like a check_results row, so it can be stored as is.

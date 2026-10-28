@@ -4,6 +4,7 @@ node_modules/
 # Build output is reproducible from source.
 dist/
 *.tsbuildinfo
+db/src/generated/
 
 # Real secrets live only in .env on each machine; .env.example is the template.
 .env

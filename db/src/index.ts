@@ -1,7 +1,8 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from "./generated/prisma/client.js";
 
 // Besides the Prisma client, this package holds the code the API and the worker share.
-export * from "@prisma/client";
+export * from "./generated/prisma/client.js";
 export { decryptSecret, encryptSecret, parseEncryptionKey } from "./crypto.js";
 export { deliver, openConfig, sealConfig, type DeliverOptions } from "./channels/deliver.js";
 export { guardedTransport } from "./channels/transport.js";
@@ -92,5 +93,13 @@ export {
   type ScheduledMonitor,
 } from "./queues.js";
 
-// One client per process: each PrismaClient holds its own connection pool.
-export const prisma = new PrismaClient();
+// Each client holds its own pool of connections through node-postgres. Prisma 6
+// gave up on a connection after 5 seconds; pg would wait forever, so keep that limit.
+export function createPrisma(connectionString = process.env.DATABASE_URL) {
+  return new PrismaClient({
+    adapter: new PrismaPg({ connectionString, connectionTimeoutMillis: 5_000 }),
+  });
+}
+
+// One client per process.
+export const prisma = createPrisma();

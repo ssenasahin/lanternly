@@ -11,6 +11,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "systeminformation": "^5.33.16"
+    "systeminformation": "^5.33.17"
   }
 }

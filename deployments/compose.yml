@@ -53,7 +53,7 @@ services:
   migrate:
     <<: *app
     restart: "no"
-    command: ["npx", "prisma", "migrate", "deploy", "--schema", "db/prisma/schema.prisma"]
+    command: ["npx", "prisma", "migrate", "deploy", "--config", "db/prisma.config.ts"]
     depends_on:
       postgres:
         condition: service_healthy

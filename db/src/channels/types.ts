@@ -1,4 +1,4 @@
-import type { ChannelType } from "@prisma/client";
+import type { ChannelType } from "../generated/prisma/client.js";
 
 // What every channel is told, whatever it looks like once it arrives.
 export interface AlertMessage {

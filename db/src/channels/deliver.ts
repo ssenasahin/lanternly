@@ -1,4 +1,4 @@
-import type { ChannelType } from "@prisma/client";
+import type { ChannelType } from "../generated/prisma/client.js";
 import { decryptSecret, encryptSecret } from "../crypto.js";
 import { sendSlack } from "./slack.js";
 import { sendTelegram } from "./telegram.js";

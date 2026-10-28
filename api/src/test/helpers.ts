@@ -1,6 +1,6 @@
 import {
+  createPrisma,
   isScheduled,
-  PrismaClient,
   type Mail,
   type Mailer,
   type MonitorScheduler,
@@ -30,7 +30,7 @@ export const testEnv: Env = {
   AUTH_RATE_LIMIT_PER_MINUTE: 1000,
 };
 
-export const prisma = new PrismaClient({ datasourceUrl: TEST_DATABASE_URL });
+export const prisma = createPrisma(TEST_DATABASE_URL);
 
 // Collects outgoing email instead of sending it.
 export const outbox: Mail[] = [];

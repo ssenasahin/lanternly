@@ -4,15 +4,15 @@
 import {
   type DnsRecordType,
   MonitorType,
-  PrismaClient,
   type AssertionOperator,
   type CheckStatus,
   type Prisma,
-} from "@prisma/client";
+} from "../src/generated/prisma/client.js";
+import { createPrisma } from "../src/index.js";
 import argon2 from "argon2";
 import { createHash, randomBytes } from "node:crypto";
 
-const prisma = new PrismaClient();
+const prisma = createPrisma();
 
 const DEMO_EMAIL = "demo@lanternly.dev";
 

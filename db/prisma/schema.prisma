@@ -1,13 +1,17 @@
 // The single source of truth for Lanternly's data. Models use camelCase in
 // TypeScript and are mapped to snake_case tables and columns in PostgreSQL.
 
+// Generated into src/ so tsc builds it with the rest of the package; never committed.
 generator client {
-  provider = "prisma-client-js"
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
 }
 
+// The connection string comes from prisma.config.ts.
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 enum Role {
