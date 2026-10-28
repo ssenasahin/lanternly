@@ -210,12 +210,12 @@ docs/screenshots/     images used in this README
 
 ## Requirements
 
-| Tool       | Version                | Why                                                                      |
-| ---------- | ---------------------- | ------------------------------------------------------------------------ |
-| Node.js    | 22 or newer (`.nvmrc`) | api, worker, agent and the web build                                     |
-| PostgreSQL | 16                     | everything that lasts                                                    |
-| Redis      | 7                      | the check schedule and job queues                                        |
-| Docker     | with Compose v2        | runs PostgreSQL, Redis and Mailpit locally, and everything in production |
+| Tool       | Version                 | Why                                                                      |
+| ---------- | ----------------------- | ------------------------------------------------------------------------ |
+| Node.js    | 24 (`.nvmrc`), 22 works | api, worker, agent and the web build                                     |
+| PostgreSQL | 16                      | everything that lasts                                                    |
+| Redis      | 7.4                     | the check schedule and job queues                                        |
+| Docker     | with Compose v2         | runs PostgreSQL, Redis and Mailpit locally, and everything in production |
 
 ## Running it locally
 

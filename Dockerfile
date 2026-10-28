@@ -1,7 +1,7 @@
 # One build for the whole workspace; deployments/compose.yml runs its stages as
 # the api, the worker, the migration step and the web server.
 
-FROM node:22-bookworm-slim AS build
+FROM node:24-trixie-slim AS build
 WORKDIR /app
 # Prisma's engines need OpenSSL to be present when the client is generated.
 RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
@@ -18,7 +18,7 @@ RUN npm run build
 
 # The api, the worker and the migration step. The Prisma CLI stays in the image
 # because `migrate` applies the migrations with it on every deploy.
-FROM node:22-bookworm-slim AS app
+FROM node:24-trixie-slim AS app
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production
